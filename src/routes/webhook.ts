@@ -104,7 +104,7 @@ router.post(
 );
 
 router.get("/webhook", (_req, res) => {
-  res.status(200).json({ status: "ok", service: "autostack-webhook" });
+  res.status(200).json({ status: "ok", service: "satspilot-webhook" });
 });
 
 export default router;

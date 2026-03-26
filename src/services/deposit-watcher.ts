@@ -29,7 +29,7 @@ async function checkDeposits(): Promise<void> {
           const diff = (parseFloat(rbtcBalance) - parseFloat(lastRbtc)).toFixed(8);
           await sendMessage(
             user.whatsappId,
-            `Deposit detected! +${diff} RBTC received.\nNew balance: ${parseFloat(rbtcBalance).toFixed(8)} RBTC\n\nType "help" to set up DCA.`
+            `Deposito detectado! +${diff} RBTC recibidos.\nNuevo saldo: ${parseFloat(rbtcBalance).toFixed(8)} RBTC\n\nEscribi *ayuda* para configurar tu DCA.`
           );
         }
 
@@ -37,7 +37,7 @@ async function checkDeposits(): Promise<void> {
           const diff = (parseFloat(rusdtBalance) - parseFloat(lastRusdt)).toFixed(2);
           await sendMessage(
             user.whatsappId,
-            `Deposit detected! +${diff} rUSDT received.\nNew balance: ${parseFloat(rusdtBalance).toFixed(2)} rUSDT\n\nType "help" to set up DCA.`
+            `Deposito detectado! +${diff} rUSDT recibidos.\nNuevo saldo: ${parseFloat(rusdtBalance).toFixed(2)} rUSDT\n\nEscribi *ayuda* para configurar tu DCA.`
           );
         }
       }

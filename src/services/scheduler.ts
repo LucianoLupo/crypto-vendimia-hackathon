@@ -103,24 +103,24 @@ async function processDueOrders(): Promise<void> {
       let message: string;
       if (executionStatus === 'success' && swapTxHash) {
         message =
-          `DCA executed: ${order.amount} ${order.fromToken} -> ${amountOut} ${order.toToken}\n` +
+          `DCA ejecutado: ${effectiveAmount} ${order.fromToken} → ${amountOut} ${order.toToken}\n` +
           `Tx: https://explorer.rootstock.io/tx/${swapTxHash}`;
         if (smartDcaReason && smartDcaReason !== 'Price is within normal range' && smartDcaReason !== 'Price data unavailable, using base amount') {
           message += `\n\nSmart DCA: ${smartDcaReason}`;
         }
         if (yieldTxHash) {
           message +=
-            `\n\nYield deposit: ${yieldTokensReceived} i${order.toToken} received\n` +
+            `\n\nDeposito en yield: ${yieldTokensReceived} i${order.toToken} recibidos\n` +
             `Tx: https://explorer.rootstock.io/tx/${yieldTxHash}`;
         } else if (errorMsg) {
-          message += `\n\nNote: ${errorMsg}`;
+          message += `\n\nNota: ${errorMsg}`;
         }
-        message += `\n\nNext run: ${new Date(nextExecution).toUTCString()}`;
+        message += `\n\nProxima ejecucion: ${new Date(nextExecution).toUTCString()}`;
       } else {
         message =
-          `DCA execution failed for ${order.amount} ${order.fromToken} -> ${order.toToken}\n` +
+          `Fallo la ejecucion DCA de ${order.amount} ${order.fromToken} → ${order.toToken}\n` +
           `Error: ${errorMsg}\n\n` +
-          `Will retry at: ${new Date(nextExecution).toUTCString()}`;
+          `Se reintentara: ${new Date(nextExecution).toUTCString()}`;
       }
 
       await sendMessage(user.whatsappId, message);

@@ -14,14 +14,14 @@ app.use("/", webhookRouter);
 app.use(express.json());
 
 app.get("/", (_req, res) => {
-  res.json({ status: "ok", name: "autostack-bot" });
+  res.json({ status: "ok", name: "satspilot" });
 });
 
 app.listen(env.PORT, () => {
-  console.log(`autostack-bot running on port ${env.PORT}`);
+  console.log(`satspilot running on port ${env.PORT}`);
 
   startScheduler();
   startDepositWatcher();
 
-  console.log("All services started. AutoStack is ready.");
+  console.log("All services started. SatsPilot is ready.");
 });
