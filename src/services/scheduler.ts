@@ -101,7 +101,7 @@ async function processDueOrders(): Promise<void> {
       updateOrderNextExecution(order.id, nextExecution);
 
       let message: string;
-      if (executionStatus === 'success' && swapTxHash) {
+      if (executionStatus === 'completed' && swapTxHash) {
         message =
           `DCA ejecutado: ${effectiveAmount} ${order.fromToken} → ${amountOut} ${order.toToken}\n` +
           `Tx: https://explorer.rootstock.io/tx/${swapTxHash}`;
