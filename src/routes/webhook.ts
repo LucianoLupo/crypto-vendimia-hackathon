@@ -4,27 +4,30 @@ import * as crypto from "crypto";
 import { env } from "../config/env";
 import { processMessage } from "../services/commands";
 
-interface KapsoMessageData {
+// Kapso webhook payload format (batched)
+interface KapsoMessage {
   from: string;
   id: string;
   type: string;
-  text?: {
-    body: string;
-  };
-  timestamp?: number;
+  text?: { body: string };
+  timestamp: string;
+}
+
+interface KapsoBatchItem {
+  message: KapsoMessage;
+  conversation?: { id: string };
+  contact?: { wa_id: string; profile?: { name: string } };
 }
 
 interface KapsoWebhookPayload {
-  event: string;
-  timestamp?: number;
-  data: KapsoMessageData;
+  type: string;        // "whatsapp.message.received"
+  batch: boolean;
+  data: KapsoBatchItem[];
 }
 
 const router = Router();
 
 function verifyHmacSignature(rawBody: Buffer, signature: string): boolean {
-  // Kapso sends just the hex digest (no "sha256=" prefix)
-  // Input is JSON.stringify(payload) — which is the raw body
   const expected = crypto
     .createHmac("sha256", env.KAPSO_WEBHOOK_SECRET)
     .update(rawBody)
@@ -45,17 +48,14 @@ router.post(
   express.raw({ type: "application/json" }),
   async (req, res) => {
     const signature = req.headers["x-webhook-signature"];
-
     const rawBody: Buffer = req.body;
 
-    // Log incoming webhook for debugging
     console.log('[webhook] Received event:', req.headers['x-webhook-event']);
-    console.log('[webhook] Body preview:', rawBody.toString('utf-8').substring(0, 200));
 
-    // Verify signature if present (skip if missing for hackathon debugging)
+    // Verify signature if present
     if (signature && typeof signature === "string") {
       if (!verifyHmacSignature(rawBody, signature)) {
-        console.log('[webhook] Signature verification failed — allowing through for hackathon');
+        console.log('[webhook] Signature mismatch — allowing through for hackathon');
       }
     }
 
@@ -67,29 +67,39 @@ router.post(
       return;
     }
 
-    if (payload.event !== "whatsapp.message.received") {
-      res.status(200).json({ received: true, skipped: true });
-      return;
-    }
-
-    const { data } = payload;
-
-    if (data.type !== "text" || !data.text?.body) {
-      res.status(200).json({ received: true, skipped: true });
-      return;
-    }
-
-    const senderPhone = data.from;
-    const messageText = data.text.body;
-
+    // Respond immediately to avoid Kapso timeout
     res.status(200).json({ received: true });
 
-    processMessage(senderPhone, messageText).catch((err) => {
-      console.error(
-        `Error processing message from ${senderPhone}:`,
-        err
-      );
-    });
+    // Check event type (Kapso uses "type" not "event")
+    if (payload.type !== "whatsapp.message.received") {
+      console.log(`[webhook] Skipping event type: ${payload.type}`);
+      return;
+    }
+
+    // Process batched messages
+    const items = Array.isArray(payload.data) ? payload.data : [payload.data];
+
+    for (const item of items) {
+      const msg = item.message;
+      if (!msg) {
+        console.log('[webhook] No message in batch item, skipping');
+        continue;
+      }
+
+      if (msg.type !== "text" || !msg.text?.body) {
+        console.log(`[webhook] Skipping non-text message type: ${msg.type}`);
+        continue;
+      }
+
+      const senderPhone = msg.from;
+      const messageText = msg.text.body;
+
+      console.log(`[webhook] Processing message from ${senderPhone}: "${messageText}"`);
+
+      processMessage(senderPhone, messageText).catch((err) => {
+        console.error(`[webhook] Error processing message from ${senderPhone}:`, err);
+      });
+    }
   }
 );
 
