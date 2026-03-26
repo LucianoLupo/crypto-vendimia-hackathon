@@ -180,17 +180,3 @@ export async function executeSwap(
     throw new Error(`Swap failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
-
-export async function getSwapRate(
-  tokenInSymbol: string,
-  tokenOutSymbol: string
-): Promise<string> {
-  try {
-    const rate = await getQuote(tokenInSymbol, tokenOutSymbol, '1');
-    console.log(`Rate: 1 ${tokenInSymbol} = ${rate} ${tokenOutSymbol}`);
-    return rate;
-  } catch (err) {
-    console.error(`getSwapRate failed for ${tokenInSymbol} → ${tokenOutSymbol}:`, err);
-    throw new Error(`Failed to get swap rate: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}

@@ -133,8 +133,12 @@ export async function parseMessage(messageText: string): Promise<ParsedIntent> {
 
   let raw = '';
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Authorization': `Bearer ${openRouterKey}`,
         'Content-Type': 'application/json',
@@ -148,6 +152,8 @@ export async function parseMessage(messageText: string): Promise<ParsedIntent> {
         ],
       }),
     });
+
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();

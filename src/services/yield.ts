@@ -1,6 +1,5 @@
-import { Contract, Wallet, parseUnits, formatUnits, formatEther } from 'ethers';
+import { Contract, Wallet, parseUnits, formatUnits } from 'ethers';
 import { YIELD_CONTRACTS, TOKEN_ADDRESSES, TOKEN_DECIMALS } from '../config/tokens';
-import { getProvider } from './wallet';
 
 const ITOKEN_ABI = [
   'function mint(address receiver, uint256 depositAmount) external payable returns (uint256 mintAmount)',
@@ -55,76 +54,6 @@ export async function depositToYield(
     return { txHash: tx.hash, iTokensReceived: formatUnits(parsedAmount, decimals) };
   } catch (err) {
     console.error(`[yield] depositToYield failed for ${tokenSymbol} amount=${amount}:`, err);
-    throw err;
-  }
-}
-
-export async function withdrawFromYield(
-  wallet: Wallet,
-  tokenSymbol: string,
-  burnAmount: string
-): Promise<{ txHash: string; underlyingReceived: string }> {
-  const config = YIELD_MAP[tokenSymbol.toUpperCase()];
-  if (!config) {
-    throw new Error(`Token ${tokenSymbol} is not supported for yield. Supported: ${getSupportedYieldTokens().join(', ')}`);
-  }
-
-  const decimals = TOKEN_DECIMALS[tokenSymbol.toUpperCase()] ?? 18;
-  const parsedBurnAmount = parseUnits(burnAmount, decimals);
-  const iToken = new Contract(config.iToken, ITOKEN_ABI, wallet);
-
-  try {
-    const tx = await iToken.burn(wallet.address, parsedBurnAmount);
-    const receipt = await tx.wait();
-    if (!receipt) throw new Error('Yield withdrawal transaction dropped');
-    return { txHash: tx.hash, underlyingReceived: 'pending' };
-  } catch (err) {
-    console.error(`[yield] withdrawFromYield failed for ${tokenSymbol} burnAmount=${burnAmount}:`, err);
-    throw err;
-  }
-}
-
-export async function getYieldBalance(
-  walletAddress: string,
-  tokenSymbol: string
-): Promise<{ iTokenBalance: string; underlyingValue: string }> {
-  const config = YIELD_MAP[tokenSymbol.toUpperCase()];
-  if (!config) {
-    throw new Error(`Token ${tokenSymbol} is not supported for yield. Supported: ${getSupportedYieldTokens().join(', ')}`);
-  }
-
-  const provider = getProvider();
-  const iToken = new Contract(config.iToken, ITOKEN_ABI, provider);
-
-  try {
-    const [rawBalance, rawUnderlying]: [bigint, bigint] = await Promise.all([
-      iToken.balanceOf(walletAddress),
-      iToken.assetBalanceOf(walletAddress),
-    ]);
-    return {
-      iTokenBalance: formatEther(rawBalance),
-      underlyingValue: formatEther(rawUnderlying),
-    };
-  } catch (err) {
-    console.error(`[yield] getYieldBalance failed for ${tokenSymbol} wallet=${walletAddress}:`, err);
-    throw err;
-  }
-}
-
-export async function getYieldRate(tokenSymbol: string): Promise<string> {
-  const config = YIELD_MAP[tokenSymbol.toUpperCase()];
-  if (!config) {
-    throw new Error(`Token ${tokenSymbol} is not supported for yield. Supported: ${getSupportedYieldTokens().join(', ')}`);
-  }
-
-  const provider = getProvider();
-  const iToken = new Contract(config.iToken, ITOKEN_ABI, provider);
-
-  try {
-    const price: bigint = await iToken.tokenPrice();
-    return formatEther(price);
-  } catch (err) {
-    console.error(`[yield] getYieldRate failed for ${tokenSymbol}:`, err);
     throw err;
   }
 }

@@ -5,6 +5,7 @@ import * as schema from './schema';
 import type { User, NewUser, DCAOrder, NewDCAOrder, Execution, NewExecution } from './schema';
 
 const sqlite = new Database('./autostack.db');
+sqlite.pragma('journal_mode = WAL');
 
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS users (

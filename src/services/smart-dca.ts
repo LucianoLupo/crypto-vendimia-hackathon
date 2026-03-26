@@ -56,7 +56,7 @@ export async function calculateSmartAmount(
   if (currentPrice === 0 || sma7d === 0) {
     return {
       adjustedAmount: baseAmount,
-      reason: 'Price data unavailable, using base amount',
+      reason: 'Datos de precio no disponibles, usando monto base',
       priceData: { currentPrice, sma7d, deviation: 0 },
     };
   }
@@ -69,13 +69,13 @@ export async function calculateSmartAmount(
 
   if (deviation < -0.05) {
     adjustedAmount = (base * 1.5).toFixed(6);
-    reason = `Price is ${Math.abs(deviation * 100).toFixed(1)}% below 7-day average — buying 50% more (dip buying)`;
+    reason = `Precio ${Math.abs(deviation * 100).toFixed(1)}% debajo del promedio de 7 dias — comprando 50% mas (comprando la baja)`;
   } else if (deviation > 0.05) {
     adjustedAmount = (base * 0.5).toFixed(6);
-    reason = `Price is ${(deviation * 100).toFixed(1)}% above 7-day average — buying 50% less`;
+    reason = `Precio ${(deviation * 100).toFixed(1)}% arriba del promedio de 7 dias — comprando 50% menos`;
   } else {
     adjustedAmount = baseAmount;
-    reason = 'Price is within normal range';
+    reason = 'Precio dentro del rango normal';
   }
 
   return {
@@ -83,35 +83,4 @@ export async function calculateSmartAmount(
     reason,
     priceData: { currentPrice, sma7d, deviation },
   };
-}
-
-export async function formatPriceReport(tokenSymbol: string): Promise<string> {
-  const [currentPrice, sma7d] = await Promise.all([
-    fetchPrice(tokenSymbol),
-    fetch7DaySMA(tokenSymbol),
-  ]);
-
-  const deviation = sma7d !== 0 ? (currentPrice - sma7d) / sma7d : 0;
-  const deviationPct = deviation * 100;
-
-  let adjustment: string;
-  if (currentPrice === 0 || sma7d === 0) {
-    adjustment = 'unavailable';
-  } else if (deviation < -0.05) {
-    adjustment = '+50%';
-  } else if (deviation > 0.05) {
-    adjustment = '-50%';
-  } else {
-    adjustment = 'none';
-  }
-
-  const sign = deviationPct >= 0 ? '+' : '';
-
-  return [
-    `${tokenSymbol.toUpperCase()} Price Report:`,
-    `Current: $${currentPrice.toFixed(2)}`,
-    `7-Day Average: $${sma7d.toFixed(2)}`,
-    `Deviation: ${sign}${deviationPct.toFixed(1)}%`,
-    `DCA Adjustment: ${adjustment}`,
-  ].join('\n');
 }

@@ -51,7 +51,7 @@ async function processDueOrders(): Promise<void> {
       let amountOut: string | null = null;
       let yieldTxHash: string | null = null;
       let yieldTokensReceived: string | null = null;
-      let executionStatus = 'success';
+      let executionStatus = 'completed';
       let errorMsg: string | null = null;
       let smartDcaReason = '';
       let effectiveAmount = order.amount;
@@ -105,7 +105,7 @@ async function processDueOrders(): Promise<void> {
         message =
           `DCA ejecutado: ${effectiveAmount} ${order.fromToken} → ${amountOut} ${order.toToken}\n` +
           `Tx: https://explorer.rootstock.io/tx/${swapTxHash}`;
-        if (smartDcaReason && smartDcaReason !== 'Price is within normal range' && smartDcaReason !== 'Price data unavailable, using base amount') {
+        if (smartDcaReason && smartDcaReason !== 'Precio dentro del rango normal' && smartDcaReason !== 'Datos de precio no disponibles, usando monto base') {
           message += `\n\nSmart DCA: ${smartDcaReason}`;
         }
         if (yieldTxHash) {

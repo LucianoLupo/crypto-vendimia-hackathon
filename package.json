@@ -1,7 +1,7 @@
 {
-  "name": "autostack-bot",
+  "name": "satspilot",
   "version": "1.0.0",
-  "description": "AutoStack WhatsApp bot for RSK DeFi automation",
+  "description": "SatsPilot — WhatsApp DCA + Auto-Yield bot on Rootstock",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -10,7 +10,6 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.30.0",
