@@ -1,5 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
-
 export type ParsedIntent = {
   action: 'start' | 'dca' | 'balance' | 'status' | 'pause' | 'resume' | 'cancel' | 'help' | 'deposit' | 'unknown';
   params: {
@@ -12,8 +10,6 @@ export type ParsedIntent = {
   confidence: number;
   rawResponse?: string;
 };
-
-const client = new Anthropic();
 
 const SYSTEM_PROMPT = `You are an intent parser for AutoStack, a WhatsApp DCA (Dollar-Cost Averaging) bot on the Rootstock (RSK) blockchain.
 
@@ -55,17 +51,104 @@ Examples:
 - "hello" → {"action":"start","params":{},"confidence":0.85}
 - "what's the weather?" → {"action":"unknown","params":{},"confidence":0.95}`;
 
+// Try regex-based parsing first for common commands (no API call needed)
+function tryLocalParse(text: string): ParsedIntent | null {
+  const t = text.trim().toLowerCase();
+
+  if (/^(hi|hello|hey|start|hola|holis)$/i.test(t)) {
+    return { action: 'start', params: {}, confidence: 1 };
+  }
+  if (/^(help|commands|menu|\?)$/i.test(t)) {
+    return { action: 'help', params: {}, confidence: 1 };
+  }
+  if (/^(balance|balances|check.*(balance|wallet)|my balance|wallet)$/i.test(t)) {
+    return { action: 'balance', params: {}, confidence: 1 };
+  }
+  if (/^(status|orders|my orders|show.*orders|mis ordenes)$/i.test(t)) {
+    return { action: 'status', params: {}, confidence: 1 };
+  }
+  if (/^(deposit|address|my address|wallet address)$/i.test(t)) {
+    return { action: 'deposit', params: {}, confidence: 1 };
+  }
+
+  // DCA pattern: "buy 10 RBTC daily" / "dca 5 DOC weekly" / "stack 20 RIF hourly"
+  const dcaMatch = t.match(
+    /(?:buy|dca|stack|invest|comprar)\s+([\d.]+)\s*(?:of\s+)?(\w+)\s*(hourly|daily|weekly|every\s*(?:hour|day|week))/i
+  );
+  if (dcaMatch) {
+    const freq = dcaMatch[3].replace(/every\s*/, '').replace('hour', 'hourly').replace('day', 'daily').replace('week', 'weekly');
+    return {
+      action: 'dca',
+      params: {
+        amount: dcaMatch[1],
+        token: dcaMatch[2].toUpperCase(),
+        frequency: freq,
+        fromToken: 'RUSDT',
+      },
+      confidence: 0.95,
+    };
+  }
+
+  // Pause/resume/cancel with optional order ID
+  const pauseMatch = t.match(/^pause(?:\s+(?:order\s*)?#?(\d+))?$/i);
+  if (pauseMatch) {
+    return { action: 'pause', params: { orderId: pauseMatch[1] ? parseInt(pauseMatch[1]) : undefined }, confidence: 1 };
+  }
+  const resumeMatch = t.match(/^resume(?:\s+(?:order\s*)?#?(\d+))?$/i);
+  if (resumeMatch) {
+    return { action: 'resume', params: { orderId: resumeMatch[1] ? parseInt(resumeMatch[1]) : undefined }, confidence: 1 };
+  }
+  const cancelMatch = t.match(/^(?:cancel|stop)(?:\s+(?:order\s*)?#?(\d+))?$/i);
+  if (cancelMatch) {
+    return { action: 'cancel', params: { orderId: cancelMatch[1] ? parseInt(cancelMatch[1]) : undefined }, confidence: 1 };
+  }
+
+  return null; // Couldn't parse locally — fall through to LLM
+}
+
 export async function parseMessage(messageText: string): Promise<ParsedIntent> {
+  // Try local parsing first (fast, free)
+  const local = tryLocalParse(messageText);
+  if (local) {
+    console.log(`[parser] Local match: "${messageText}" → ${local.action}`);
+    return local;
+  }
+
+  // Fall back to LLM via OpenRouter
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  if (!openRouterKey) {
+    console.log(`[parser] No OPENROUTER_API_KEY, returning unknown for: "${messageText}"`);
+    return { action: 'unknown', params: {}, confidence: 0 };
+  }
+
   let raw = '';
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 256,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: messageText }],
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openRouterKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4',
+        max_tokens: 256,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: messageText },
+        ],
+      }),
     });
 
-    raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`OpenRouter ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json() as {
+      choices: Array<{ message: { content: string } }>;
+    };
+
+    raw = data.choices?.[0]?.message?.content?.trim() ?? '';
 
     const parsed = JSON.parse(raw);
     return {
