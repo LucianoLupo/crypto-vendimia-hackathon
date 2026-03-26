@@ -130,7 +130,7 @@ export async function parseMessage(messageText: string): Promise<ParsedIntent> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'anthropic/claude-haiku-4',
+        model: 'anthropic/claude-3.5-haiku',
         max_tokens: 256,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
