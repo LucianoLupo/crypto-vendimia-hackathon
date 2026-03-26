@@ -21,6 +21,7 @@ export const dcaOrders = sqliteTable('dca_orders', {
   yieldProtocol: text('yield_protocol').notNull().default('sovryn'),
   status: text('status').notNull().default('active'),
   nextExecution: text('next_execution').notNull(),
+  failureCount: integer('failure_count').notNull().default(0),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

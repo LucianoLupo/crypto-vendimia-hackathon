@@ -1,32 +1,24 @@
 import cron from 'node-cron';
 import { eq } from 'drizzle-orm';
-import { getDueOrders, updateOrderNextExecution, logExecution, db } from '../db';
+import { parseEther } from 'ethers';
+import { getDueOrders, updateOrderNextExecution, updateOrderStatus, logExecution, incrementFailureCount, resetFailureCount, db } from '../db';
 import * as schema from '../db/schema';
-import { getUserWallet } from './wallet';
+import { getUserWallet, getProvider } from './wallet';
 import { executeSwap } from './swap';
 import { depositToYield } from './yield';
 import { sendMessage } from './whatsapp';
 import { calculateSmartAmount } from './smart-dca';
-import { EXEC_STATUS } from '../config/constants';
+import { EXEC_STATUS, ORDER_STATUS } from '../config/constants';
+import { calcNextExecution } from '../utils/time';
+
+const MAX_CONSECUTIVE_FAILURES = 3;
+const MIN_GAS_BALANCE = parseEther('0.00005');
+
+/** Map of whatsappId → timestamp of last DCA execution. Used by deposit-watcher to suppress false-positive notifications. */
+export const recentDcaExecutions = new Map<string, number>();
 
 let schedulerTask: cron.ScheduledTask | null = null;
 let isProcessing = false;
-
-function calcNextExecution(frequency: string): string {
-  const next = new Date();
-  switch (frequency) {
-    case 'hourly':
-      next.setHours(next.getHours() + 1);
-      break;
-    case 'weekly':
-      next.setDate(next.getDate() + 7);
-      break;
-    case 'daily':
-    default:
-      next.setDate(next.getDate() + 1);
-  }
-  return next.toISOString();
-}
 
 async function processDueOrders(): Promise<void> {
   if (isProcessing) {
@@ -48,6 +40,21 @@ async function processDueOrders(): Promise<void> {
 
       const wallet = getUserWallet(user.walletIndex);
 
+      // 4C: Pre-check gas balance before swap
+      const provider = getProvider();
+      const gasBalance = await provider.getBalance(wallet.address);
+      if (gasBalance < MIN_GAS_BALANCE) {
+        console.log(`[scheduler] Insufficient gas for order ${order.id}, balance=${gasBalance.toString()}`);
+        const nextExecution = calcNextExecution(order.frequency, order.nextExecution);
+        updateOrderNextExecution(order.id, nextExecution);
+        await sendMessage(
+          user.whatsappId,
+          `Saldo de gas insuficiente (RBTC). Depositá RBTC en tu wallet para cubrir gas.\n\nOrden #${order.id} se reintentará: ${new Date(nextExecution).toUTCString()}`
+        );
+        // Don't count as failure for circuit breaker
+        continue;
+      }
+
       let swapTxHash: string | null = null;
       let amountOut: string | null = null;
       let yieldTxHash: string | null = null;
@@ -68,6 +75,9 @@ async function processDueOrders(): Promise<void> {
         swapTxHash = swapResult.txHash;
         amountOut = swapResult.amountOut;
         console.log(`[scheduler] Swap OK order=${order.id} txHash=${swapTxHash} amountOut=${amountOut}`);
+
+        // 4E: Record cooldown for deposit-watcher suppression
+        recentDcaExecutions.set(user.whatsappId, Date.now());
 
         if (order.autoYield === 1) {
           try {
@@ -98,8 +108,26 @@ async function processDueOrders(): Promise<void> {
         error: errorMsg,
       });
 
-      const nextExecution = calcNextExecution(order.frequency);
+      // 4D: Calculate next execution from scheduled time, not current time
+      const nextExecution = calcNextExecution(order.frequency, order.nextExecution);
       updateOrderNextExecution(order.id, nextExecution);
+
+      // 4B: Circuit breaker — track consecutive failures
+      if (executionStatus === EXEC_STATUS.FAILED) {
+        const failCount = incrementFailureCount(order.id);
+        if (failCount >= MAX_CONSECUTIVE_FAILURES) {
+          updateOrderStatus(order.id, ORDER_STATUS.PAUSED);
+          await sendMessage(
+            user.whatsappId,
+            `Orden #${order.id} pausada automáticamente después de ${failCount} fallos consecutivos.\n` +
+            `Último error: ${errorMsg}\n\n` +
+            `Revisá tu balance y escribí *reanudar* para reactivarla.`
+          );
+          continue;
+        }
+      } else {
+        resetFailureCount(order.id);
+      }
 
       let message: string;
       if (executionStatus === EXEC_STATUS.COMPLETED && swapTxHash) {

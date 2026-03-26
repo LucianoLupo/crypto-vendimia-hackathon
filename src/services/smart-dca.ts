@@ -1,8 +1,11 @@
 const COINGECKO_IDS: Record<string, string> = {
   RBTC: 'rootstock',
+  WRBTC: 'rootstock',
   DOC: 'dollar-on-chain',
   RIF: 'rif-token',
   SOV: 'sovryn',
+  RUSDT: 'tether',
+  // DLLR has no CoinGecko listing — handled gracefully by calculateSmartAmount
 };
 
 export async function fetchPrice(tokenSymbol: string): Promise<number> {
@@ -52,6 +55,15 @@ export async function calculateSmartAmount(
     fetchPrice(tokenSymbol),
     fetch7DaySMA(tokenSymbol),
   ]);
+
+  const hasCoinGeckoId = !!COINGECKO_IDS[tokenSymbol.toUpperCase()];
+  if (!hasCoinGeckoId) {
+    return {
+      adjustedAmount: baseAmount,
+      reason: `Datos de precio no disponibles para ${tokenSymbol.toUpperCase()}`,
+      priceData: { currentPrice: 0, sma7d: 0, deviation: 0 },
+    };
+  }
 
   if (currentPrice === 0 || sma7d === 0) {
     return {

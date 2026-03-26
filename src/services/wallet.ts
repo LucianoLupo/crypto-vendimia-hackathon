@@ -14,7 +14,7 @@ let _provider: JsonRpcProvider | null = null;
 
 export function getProvider(): JsonRpcProvider {
   if (!_provider) {
-    _provider = new JsonRpcProvider(env.RSK_RPC_URL);
+    _provider = new JsonRpcProvider(env.RSK_RPC_URL, { chainId: 30, name: 'rsk' }, { staticNetwork: true });
   }
   return _provider;
 }

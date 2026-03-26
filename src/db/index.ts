@@ -29,6 +29,7 @@ sqlite.exec(`
     yield_protocol TEXT NOT NULL DEFAULT 'sovryn',
     status TEXT NOT NULL DEFAULT 'active',
     next_execution TEXT NOT NULL,
+    failure_count INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )
 `);
@@ -48,6 +49,13 @@ sqlite.exec(`
     executed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )
 `);
+
+// Migration: add failure_count column if missing (for existing databases)
+try {
+  sqlite.exec(`ALTER TABLE dca_orders ADD COLUMN failure_count INTEGER NOT NULL DEFAULT 0`);
+} catch {
+  // Column already exists
+}
 
 export const db = drizzle(sqlite, { schema });
 
@@ -141,6 +149,27 @@ export function updateOrderStatus(orderId: number, status: string): void {
 
 export function logExecution(params: Omit<NewExecution, 'id' | 'executedAt'>): void {
   db.insert(schema.executions).values(params).run();
+}
+
+export function incrementFailureCount(orderId: number): number {
+  const order = db
+    .select({ failureCount: schema.dcaOrders.failureCount })
+    .from(schema.dcaOrders)
+    .where(eq(schema.dcaOrders.id, orderId))
+    .get();
+  const newCount = (order?.failureCount ?? 0) + 1;
+  db.update(schema.dcaOrders)
+    .set({ failureCount: newCount })
+    .where(eq(schema.dcaOrders.id, orderId))
+    .run();
+  return newCount;
+}
+
+export function resetFailureCount(orderId: number): void {
+  db.update(schema.dcaOrders)
+    .set({ failureCount: 0 })
+    .where(eq(schema.dcaOrders.id, orderId))
+    .run();
 }
 
 export function getUserExecutions(userId: number, limit = 10): Execution[] {

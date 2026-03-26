@@ -17,6 +17,8 @@ import type { ParsedIntent } from './parser';
 import { TOKEN_ADDRESSES } from '../config/tokens';
 import { ORDER_STATUS, EXEC_STATUS } from '../config/constants';
 import { getQuote } from './swap';
+import { getSupportedYieldTokens } from './yield';
+import { calcNextExecution } from '../utils/time';
 
 const SUPPORTED_TOKENS = ['RBTC', ...Object.keys(TOKEN_ADDRESSES)];
 const MAX_DCA_AMOUNT = 10000;
@@ -26,14 +28,6 @@ const FREQ_LABELS: Record<string, string> = {
   daily: 'diariamente',
   weekly: 'semanalmente',
 };
-
-function calcNextExecution(frequency: string): string {
-  const now = new Date();
-  if (frequency === 'hourly') now.setHours(now.getHours() + 1);
-  else if (frequency === 'daily') now.setDate(now.getDate() + 1);
-  else if (frequency === 'weekly') now.setDate(now.getDate() + 7);
-  return now.toISOString();
-}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('es-AR', {
@@ -141,9 +135,14 @@ async function handleDca(
     quoteInfo = '\n(Cotización no disponible — se ejecutará a precio de mercado)';
   }
 
+  const yieldTokens = getSupportedYieldTokens();
+  const yieldNote = yieldTokens.includes(normalizedToken)
+    ? ''
+    : `\n\n⚠️ Nota: auto-yield no está disponible para ${normalizedToken}. Los tokens se acumularán en tu wallet.`;
+
   await sendMessage(
     whatsappId,
-    `📊 Orden DCA creada!\n\n*Comprar ${params.amount} ${fromToken} → ${normalizedToken}*\nFrecuencia: ${FREQ_LABELS[params.frequency] ?? params.frequency}\nPróxima ejecución: ${formatDate(nextExecution)}\nOrden #${order.id}${quoteInfo}\n\nEscribí *estado* para ver tus órdenes.`
+    `📊 Orden DCA creada!\n\n*Comprar ${params.amount} ${fromToken} → ${normalizedToken}*\nFrecuencia: ${FREQ_LABELS[params.frequency] ?? params.frequency}\nPróxima ejecución: ${formatDate(nextExecution)}\nOrden #${order.id}${quoteInfo}${yieldNote}\n\nEscribí *estado* para ver tus órdenes.`
   );
 }
 

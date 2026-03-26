@@ -3,6 +3,9 @@ import * as schema from '../db/schema';
 import { getWalletBalance, getTokenBalance } from './wallet';
 import { sendMessage } from './whatsapp';
 import { TOKEN_ADDRESSES } from '../config/tokens';
+import { recentDcaExecutions } from './scheduler';
+
+const DCA_COOLDOWN_MS = 120_000; // 2 minutes
 
 const lastKnownRbtc = new Map<string, string>();
 const lastKnownRusdt = new Map<string, string>();
@@ -22,23 +25,29 @@ async function checkDeposits(): Promise<void> {
       ]);
 
       if (!isFirstRun) {
-        const lastRbtc = lastKnownRbtc.get(user.walletAddress);
-        const lastRusdt = lastKnownRusdt.get(user.walletAddress);
+        // 4E: Skip deposit notification if user had a DCA execution within cooldown window
+        const lastDca = recentDcaExecutions.get(user.whatsappId);
+        const inCooldown = lastDca !== undefined && (Date.now() - lastDca) < DCA_COOLDOWN_MS;
 
-        if (lastRbtc !== undefined && parseFloat(rbtcBalance) > parseFloat(lastRbtc)) {
-          const diff = (parseFloat(rbtcBalance) - parseFloat(lastRbtc)).toFixed(8);
-          await sendMessage(
-            user.whatsappId,
-            `📥 Depósito detectado! +${diff} RBTC recibidos.\nNuevo saldo: ${parseFloat(rbtcBalance).toFixed(8)} RBTC\n\nEscribí *ayuda* para configurar tu DCA.`
-          );
-        }
+        if (!inCooldown) {
+          const lastRbtc = lastKnownRbtc.get(user.walletAddress);
+          const lastRusdt = lastKnownRusdt.get(user.walletAddress);
 
-        if (lastRusdt !== undefined && parseFloat(rusdtBalance) > parseFloat(lastRusdt)) {
-          const diff = (parseFloat(rusdtBalance) - parseFloat(lastRusdt)).toFixed(2);
-          await sendMessage(
-            user.whatsappId,
-            `📥 Depósito detectado! +${diff} rUSDT recibidos.\nNuevo saldo: ${parseFloat(rusdtBalance).toFixed(2)} rUSDT\n\nEscribí *ayuda* para configurar tu DCA.`
-          );
+          if (lastRbtc !== undefined && parseFloat(rbtcBalance) > parseFloat(lastRbtc)) {
+            const diff = (parseFloat(rbtcBalance) - parseFloat(lastRbtc)).toFixed(8);
+            await sendMessage(
+              user.whatsappId,
+              `📥 Depósito detectado! +${diff} RBTC recibidos.\nNuevo saldo: ${parseFloat(rbtcBalance).toFixed(8)} RBTC\n\nEscribí *ayuda* para configurar tu DCA.`
+            );
+          }
+
+          if (lastRusdt !== undefined && parseFloat(rusdtBalance) > parseFloat(lastRusdt)) {
+            const diff = (parseFloat(rusdtBalance) - parseFloat(lastRusdt)).toFixed(2);
+            await sendMessage(
+              user.whatsappId,
+              `📥 Depósito detectado! +${diff} rUSDT recibidos.\nNuevo saldo: ${parseFloat(rusdtBalance).toFixed(2)} rUSDT\n\nEscribí *ayuda* para configurar tu DCA.`
+            );
+          }
         }
       }
 
