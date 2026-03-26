@@ -29,7 +29,7 @@ async function checkDeposits(): Promise<void> {
           const diff = (parseFloat(rbtcBalance) - parseFloat(lastRbtc)).toFixed(8);
           await sendMessage(
             user.whatsappId,
-            `Deposito detectado! +${diff} RBTC recibidos.\nNuevo saldo: ${parseFloat(rbtcBalance).toFixed(8)} RBTC\n\nEscribi *ayuda* para configurar tu DCA.`
+            `📥 Depósito detectado! +${diff} RBTC recibidos.\nNuevo saldo: ${parseFloat(rbtcBalance).toFixed(8)} RBTC\n\nEscribí *ayuda* para configurar tu DCA.`
           );
         }
 
@@ -37,7 +37,7 @@ async function checkDeposits(): Promise<void> {
           const diff = (parseFloat(rusdtBalance) - parseFloat(lastRusdt)).toFixed(2);
           await sendMessage(
             user.whatsappId,
-            `Deposito detectado! +${diff} rUSDT recibidos.\nNuevo saldo: ${parseFloat(rusdtBalance).toFixed(2)} rUSDT\n\nEscribi *ayuda* para configurar tu DCA.`
+            `📥 Depósito detectado! +${diff} rUSDT recibidos.\nNuevo saldo: ${parseFloat(rusdtBalance).toFixed(2)} rUSDT\n\nEscribí *ayuda* para configurar tu DCA.`
           );
         }
       }
@@ -62,7 +62,6 @@ export function startDepositWatcher(): void {
   );
 
   watcherInterval = setInterval(async () => {
-    console.log('[deposit-watcher] Checking wallet balances...');
     await checkDeposits();
   }, 60_000);
 

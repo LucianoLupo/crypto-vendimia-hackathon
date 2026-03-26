@@ -7,6 +7,7 @@ import { executeSwap } from './swap';
 import { depositToYield } from './yield';
 import { sendMessage } from './whatsapp';
 import { calculateSmartAmount } from './smart-dca';
+import { EXEC_STATUS } from '../config/constants';
 
 let schedulerTask: cron.ScheduledTask | null = null;
 let isProcessing = false;
@@ -51,7 +52,7 @@ async function processDueOrders(): Promise<void> {
       let amountOut: string | null = null;
       let yieldTxHash: string | null = null;
       let yieldTokensReceived: string | null = null;
-      let executionStatus = 'completed';
+      let executionStatus: string = EXEC_STATUS.COMPLETED;
       let errorMsg: string | null = null;
       let smartDcaReason = '';
       let effectiveAmount = order.amount;
@@ -81,7 +82,7 @@ async function processDueOrders(): Promise<void> {
         }
       } catch (swapErr) {
         console.error(`[scheduler] Swap failed for order ${order.id}:`, swapErr);
-        executionStatus = 'failed';
+        executionStatus = EXEC_STATUS.FAILED;
         errorMsg = swapErr instanceof Error ? swapErr.message : String(swapErr);
       }
 
@@ -101,7 +102,7 @@ async function processDueOrders(): Promise<void> {
       updateOrderNextExecution(order.id, nextExecution);
 
       let message: string;
-      if (executionStatus === 'completed' && swapTxHash) {
+      if (executionStatus === EXEC_STATUS.COMPLETED && swapTxHash) {
         message =
           `DCA ejecutado: ${effectiveAmount} ${order.fromToken} → ${amountOut} ${order.toToken}\n` +
           `Tx: https://explorer.rootstock.io/tx/${swapTxHash}`;
@@ -110,17 +111,17 @@ async function processDueOrders(): Promise<void> {
         }
         if (yieldTxHash) {
           message +=
-            `\n\nDeposito en yield: ${yieldTokensReceived} i${order.toToken} recibidos\n` +
+            `\n\nDepósito en yield: ${yieldTokensReceived} i${order.toToken} recibidos\n` +
             `Tx: https://explorer.rootstock.io/tx/${yieldTxHash}`;
         } else if (errorMsg) {
           message += `\n\nNota: ${errorMsg}`;
         }
-        message += `\n\nProxima ejecucion: ${new Date(nextExecution).toUTCString()}`;
+        message += `\n\nPróxima ejecución: ${new Date(nextExecution).toUTCString()}`;
       } else {
         message =
-          `Fallo la ejecucion DCA de ${order.amount} ${order.fromToken} → ${order.toToken}\n` +
+          `Falló la ejecución DCA de ${order.amount} ${order.fromToken} → ${order.toToken}\n` +
           `Error: ${errorMsg}\n\n` +
-          `Se reintentara: ${new Date(nextExecution).toUTCString()}`;
+          `Se reintentará: ${new Date(nextExecution).toUTCString()}`;
       }
 
       await sendMessage(user.whatsappId, message);
@@ -135,7 +136,6 @@ async function processDueOrders(): Promise<void> {
 
 export function startScheduler(): void {
   schedulerTask = cron.schedule('* * * * *', async () => {
-    console.log('[scheduler] Tick — checking due orders...');
     await processDueOrders();
   });
   console.log('[scheduler] Started — running every minute');

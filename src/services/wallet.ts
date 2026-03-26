@@ -8,8 +8,7 @@ import {
   formatUnits,
 } from 'ethers';
 import { env } from '../config/env';
-
-const ERC20_ABI = ['function balanceOf(address) view returns (uint256)'];
+import { ERC20_ABI } from '../config/tokens';
 
 let _provider: JsonRpcProvider | null = null;
 

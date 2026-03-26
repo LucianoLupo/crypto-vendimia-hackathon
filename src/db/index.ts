@@ -4,7 +4,7 @@ import { eq, lte, and, desc, max } from 'drizzle-orm';
 import * as schema from './schema';
 import type { User, NewUser, DCAOrder, NewDCAOrder, Execution, NewExecution } from './schema';
 
-const sqlite = new Database('./autostack.db');
+const sqlite = new Database('./satspilot.db');
 sqlite.pragma('journal_mode = WAL');
 
 sqlite.exec(`

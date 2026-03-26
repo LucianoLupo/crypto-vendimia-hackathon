@@ -69,10 +69,10 @@ export async function calculateSmartAmount(
 
   if (deviation < -0.05) {
     adjustedAmount = (base * 1.5).toFixed(6);
-    reason = `Precio ${Math.abs(deviation * 100).toFixed(1)}% debajo del promedio de 7 dias — comprando 50% mas (comprando la baja)`;
+    reason = `Precio ${Math.abs(deviation * 100).toFixed(1)}% debajo del promedio de 7 días — comprando 50% más (comprando la baja)`;
   } else if (deviation > 0.05) {
     adjustedAmount = (base * 0.5).toFixed(6);
-    reason = `Precio ${(deviation * 100).toFixed(1)}% arriba del promedio de 7 dias — comprando 50% menos`;
+    reason = `Precio ${(deviation * 100).toFixed(1)}% arriba del promedio de 7 días — comprando 50% menos`;
   } else {
     adjustedAmount = baseAmount;
     reason = 'Precio dentro del rango normal';

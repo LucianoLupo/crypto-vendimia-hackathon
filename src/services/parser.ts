@@ -1,3 +1,5 @@
+import { env } from '../config/env';
+
 export type ParsedIntent = {
   action: 'start' | 'dca' | 'balance' | 'status' | 'pause' | 'resume' | 'cancel' | 'help' | 'deposit' | 'unknown';
   params: {
@@ -13,7 +15,7 @@ export type ParsedIntent = {
 
 const SYSTEM_PROMPT = `Sos un parser de intenciones para SatsPilot, un bot de WhatsApp que hace DCA (Dollar-Cost Averaging) en la blockchain Rootstock (RSK).
 
-El usuario habla en espanol (argentino). Parseá el mensaje y respondé UNICAMENTE con un JSON valido — sin markdown, sin explicacion, sin texto extra.
+El usuario habla en español (argentino). Parseá el mensaje y respondé ÚNICAMENTE con un JSON válido — sin markdown, sin explicación, sin texto extra.
 
 Tokens soportados: RBTC, DOC, RIF, rUSDT, SOV, DLLR, USDC
 Token fuente por defecto para DCA: rUSDT
@@ -21,15 +23,15 @@ Frecuencias soportadas: hourly (cada hora), daily (diario), weekly (semanal)
 
 Acciones:
 - "start": el usuario quiere registrarse, ver su wallet, o saluda (hola, buenas, etc)
-- "dca": quiere configurar una compra recurrente. Extraer: token (destino), amount (monto por ejecucion), frequency, fromToken (fuente, default rUSDT)
+- "dca": quiere configurar una compra recurrente. Extraer: token (destino), amount (monto por ejecución), frequency, fromToken (fuente, default rUSDT)
 - "balance": quiere ver los saldos de su wallet
-- "status": quiere ver sus ordenes DCA activas y el historial
+- "status": quiere ver sus órdenes DCA activas y el historial
 - "pause": quiere pausar una orden DCA. Extraer orderId si lo menciona.
 - "resume": quiere reanudar una orden pausada. Extraer orderId si lo menciona.
 - "cancel": quiere cancelar/eliminar una orden. Extraer orderId si lo menciona.
-- "deposit": quiere su direccion de wallet para depositar fondos
-- "help": quiere ayuda, lista de comandos, o que puede hacer el bot
-- "unknown": el mensaje no coincide con ninguna accion
+- "deposit": quiere su dirección de wallet para depositar fondos
+- "help": quiere ayuda, lista de comandos, o qué puede hacer el bot
+- "unknown": el mensaje no coincide con ninguna acción
 
 Esquema JSON:
 {
@@ -125,7 +127,7 @@ export async function parseMessage(messageText: string): Promise<ParsedIntent> {
     return local;
   }
 
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  const openRouterKey = env.OPENROUTER_API_KEY;
   if (!openRouterKey) {
     console.log(`[parser] No OPENROUTER_API_KEY, returning unknown for: "${messageText}"`);
     return { action: 'unknown', params: {}, confidence: 0 };

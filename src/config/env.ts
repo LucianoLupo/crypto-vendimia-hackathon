@@ -7,10 +7,8 @@ const envSchema = z.object({
   KAPSO_PHONE_NUMBER_ID: z.string().min(1, "KAPSO_PHONE_NUMBER_ID is required"),
   MASTER_MNEMONIC: z.string().min(1, "MASTER_MNEMONIC is required"),
   RSK_RPC_URL: z.string().url("RSK_RPC_URL must be a valid URL"),
-  ANTHROPIC_API_KEY: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
   PORT: z.coerce.number().int().positive().default(3000),
-  WALLET_ENCRYPTION_KEY: z.string().optional(),
 });
 
 const result = envSchema.safeParse(process.env);
@@ -24,4 +22,3 @@ if (!result.success) {
 }
 
 export const env = result.data;
-export type Env = typeof env;

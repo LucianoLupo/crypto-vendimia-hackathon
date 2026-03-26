@@ -2,8 +2,8 @@ import "dotenv/config";
 import express from "express";
 import webhookRouter from "./routes/webhook";
 import { env } from "./config/env";
-import { startScheduler } from "./services/scheduler";
-import { startDepositWatcher } from "./services/deposit-watcher";
+import { startScheduler, stopScheduler } from "./services/scheduler";
+import { startDepositWatcher, stopDepositWatcher } from "./services/deposit-watcher";
 
 const app = express();
 
@@ -17,7 +17,7 @@ app.get("/", (_req, res) => {
   res.json({ status: "ok", name: "satspilot" });
 });
 
-app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, () => {
   console.log(`satspilot running on port ${env.PORT}`);
 
   startScheduler();
@@ -25,3 +25,16 @@ app.listen(env.PORT, () => {
 
   console.log("All services started. SatsPilot is ready.");
 });
+
+function gracefulShutdown(signal: string): void {
+  console.log(`\n[shutdown] ${signal} received. Shutting down gracefully...`);
+  stopScheduler();
+  stopDepositWatcher();
+  server.close(() => {
+    console.log("[shutdown] HTTP server closed. Goodbye.");
+    process.exit(0);
+  });
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));

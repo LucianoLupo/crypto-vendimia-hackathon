@@ -55,7 +55,8 @@ router.post(
     // Verify signature if present
     if (signature && typeof signature === "string") {
       if (!verifyHmacSignature(rawBody, signature)) {
-        console.log('[webhook] Signature mismatch — allowing through for hackathon');
+        console.warn('[webhook] Signature mismatch — rejecting request');
+        return res.status(401).json({ error: "Invalid signature" });
       }
     }
 

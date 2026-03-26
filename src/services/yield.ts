@@ -1,17 +1,18 @@
 import { Contract, Wallet, parseUnits, formatUnits } from 'ethers';
-import { YIELD_CONTRACTS, TOKEN_ADDRESSES, TOKEN_DECIMALS } from '../config/tokens';
+import { YIELD_CONTRACTS, TOKEN_ADDRESSES, TOKEN_DECIMALS, ERC20_ABI } from '../config/tokens';
 
 const ITOKEN_ABI = [
+  // ERC20 iTokens (DOC, DLLR)
   'function mint(address receiver, uint256 depositAmount) external payable returns (uint256 mintAmount)',
   'function burn(address receiver, uint256 burnAmount) external returns (uint256 loanAmountPaid)',
   'function balanceOf(address owner) view returns (uint256)',
-  'function tokenPrice() view returns (uint256)',
-  'function assetBalanceOf(address owner) view returns (uint256)',
 ];
 
-const ERC20_ABI = [
-  'function approve(address spender, uint256 amount) returns (bool)',
-  'function allowance(address owner, address spender) view returns (uint256)',
+const IRBTC_ABI = [
+  // Sovryn iRBTC uses mintWithBTC, not mint, for native RBTC deposits
+  'function mintWithBTC(address receiver, bool useLM) external payable returns (uint256 mintAmount)',
+  'function burn(address receiver, uint256 burnAmount) external returns (uint256 loanAmountPaid)',
+  'function balanceOf(address owner) view returns (uint256)',
 ];
 
 const YIELD_MAP: Record<string, { iToken: string; underlying: string; isNative: boolean }> = {
@@ -32,13 +33,22 @@ export async function depositToYield(
 
   const decimals = TOKEN_DECIMALS[tokenSymbol.toUpperCase()] ?? 18;
   const parsedAmount = parseUnits(amount, decimals);
-  const iToken = new Contract(config.iToken, ITOKEN_ABI, wallet);
 
   try {
     let tx;
     if (config.isNative) {
-      tx = await iToken.mint(wallet.address, parsedAmount, { value: parsedAmount });
+      // Sovryn iRBTC: use mintWithBTC(receiver, useLM=false) with msg.value
+      const iRBTC = new Contract(config.iToken, IRBTC_ABI, wallet);
+      const preBalance: bigint = await iRBTC.balanceOf(wallet.address);
+      tx = await iRBTC.mintWithBTC(wallet.address, false, { value: parsedAmount });
+      const receipt = await tx.wait();
+      if (!receipt) throw new Error('Yield deposit transaction dropped');
+      const postBalance: bigint = await iRBTC.balanceOf(wallet.address);
+      const received = postBalance - preBalance;
+      return { txHash: tx.hash, iTokensReceived: formatUnits(received > 0n ? received : parsedAmount, decimals) };
     } else {
+      // ERC20 iTokens: approve underlying + mint(receiver, amount)
+      const iToken = new Contract(config.iToken, ITOKEN_ABI, wallet);
       const underlying = new Contract(config.underlying, ERC20_ABI, wallet);
       const allowance: bigint = await underlying.allowance(wallet.address, config.iToken);
       if (allowance < parsedAmount) {
@@ -46,12 +56,14 @@ export async function depositToYield(
         const approveReceipt = await approveTx.wait();
         if (!approveReceipt) throw new Error('Yield approval transaction dropped');
       }
+      const preBalance: bigint = await iToken.balanceOf(wallet.address);
       tx = await iToken.mint(wallet.address, parsedAmount);
+      const receipt = await tx.wait();
+      if (!receipt) throw new Error('Yield deposit transaction dropped');
+      const postBalance: bigint = await iToken.balanceOf(wallet.address);
+      const received = postBalance - preBalance;
+      return { txHash: tx.hash, iTokensReceived: formatUnits(received > 0n ? received : parsedAmount, decimals) };
     }
-
-    const receipt = await tx.wait();
-    if (!receipt) throw new Error('Yield deposit transaction dropped');
-    return { txHash: tx.hash, iTokensReceived: formatUnits(parsedAmount, decimals) };
   } catch (err) {
     console.error(`[yield] depositToYield failed for ${tokenSymbol} amount=${amount}:`, err);
     throw err;

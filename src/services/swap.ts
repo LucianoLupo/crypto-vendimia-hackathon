@@ -5,21 +5,19 @@ import {
   TOKEN_DECIMALS,
   DEFAULT_FEE_TIER,
   DEFAULT_SLIPPAGE,
+  ERC20_ABI,
   tokenBySymbol,
 } from '../config/tokens';
 import { getProvider } from './wallet';
 
 const ROUTER_ABI = [
-  'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)',
+  // SwapRouter02 on RSK: deadline is NOT in the struct, use multicall wrapper
+  'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)',
+  'function multicall(uint256 deadline, bytes[] data) external payable returns (bytes[] results)',
 ];
 
 const QUOTER_ABI = [
   'function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)',
-];
-
-const ERC20_ABI = [
-  'function approve(address spender, uint256 amount) returns (bool)',
-  'function allowance(address owner, address spender) view returns (uint256)',
 ];
 
 function resolveTokenAddress(symbol: string): string {
@@ -125,37 +123,34 @@ export async function executeSwap(
     );
 
     const router = new Contract(CONTRACTS.SwapRouter02, ROUTER_ABI, wallet);
-
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 300); // 5 min
 
-    const params = {
+    // SwapRouter02 struct does NOT include deadline — use multicall wrapper
+    const swapParams = {
       tokenIn,
       tokenOut,
       fee: DEFAULT_FEE_TIER,
       recipient: wallet.address,
-      deadline,
       amountIn: amountInParsed,
       amountOutMinimum,
       sqrtPriceLimitX96: 0n,
     };
 
-    // Check pre-swap balance to calculate actual output
+    // Check pre-swap WRBTC/ERC20 balance (Uniswap outputs WRBTC, not native RBTC)
     const provider = getProvider();
-    const isNativeOut = tokenOutSymbol.toUpperCase() === 'RBTC';
-    let preBalance: bigint;
-    if (isNativeOut) {
-      preBalance = await provider.getBalance(wallet.address);
-    } else {
-      const outToken = new Contract(tokenOut, ['function balanceOf(address) view returns (uint256)'], provider);
-      preBalance = await outToken.balanceOf(wallet.address);
-    }
+    const balanceToken = new Contract(tokenOut, ERC20_ABI, provider);
+    const preBalance: bigint = await balanceToken.balanceOf(wallet.address);
+
+    // Encode the swap call and wrap in multicall with deadline
+    const routerInterface = router.interface;
+    const swapCalldata = routerInterface.encodeFunctionData('exactInputSingle', [swapParams]);
 
     let tx;
     if (isNativeRBTC) {
-      tx = await router.exactInputSingle(params, { value: amountInParsed });
+      tx = await router.multicall(deadline, [swapCalldata], { value: amountInParsed });
     } else {
       await ensureApproval(wallet, tokenIn, CONTRACTS.SwapRouter02, amountInParsed);
-      tx = await router.exactInputSingle(params);
+      tx = await router.multicall(deadline, [swapCalldata]);
     }
 
     console.log(`Swap tx submitted: ${tx.hash}`);
@@ -163,14 +158,8 @@ export async function executeSwap(
     if (!receipt) throw new Error(`Swap transaction ${tx.hash} was dropped or replaced`);
     console.log(`Swap confirmed in block ${receipt.blockNumber}`);
 
-    // Calculate actual output from balance difference
-    let postBalance: bigint;
-    if (isNativeOut) {
-      postBalance = await provider.getBalance(wallet.address);
-    } else {
-      const outToken = new Contract(tokenOut, ['function balanceOf(address) view returns (uint256)'], provider);
-      postBalance = await outToken.balanceOf(wallet.address);
-    }
+    // Measure actual output from ERC20 balance diff (works for both WRBTC and other tokens)
+    const postBalance: bigint = await balanceToken.balanceOf(wallet.address);
     const actualOut = postBalance - preBalance;
     const amountOutFormatted = formatUnits(actualOut > 0n ? actualOut : amountOutMinimum, decimalsOut);
 

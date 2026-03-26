@@ -6,7 +6,7 @@ export const TOKEN_ADDRESSES: Record<string, string> = {
   RIF: "0x2acc95758f8b5f583470ba265eb685a8f45fc9d5",
   SOV: "0xefc78fc7d48b64958315949279ba181c2114abbd",
   DLLR: "0xc1411567d2670e24d9c4daaa7cda95686e1250aa",
-  USDC: "0xbb739a6e04d07b08e38b66ba137d0c9cd270c750",
+  // USDC removed — no contract deployed at the listed address on RSK mainnet
 };
 
 export const CONTRACTS: Record<string, string> = {
@@ -29,12 +29,17 @@ export const TOKEN_DECIMALS: Record<string, number> = {
   RIF: 18,
   SOV: 18,
   DLLR: 18,
-  USDC: 18,
 };
 
 export const DEFAULT_FEE_TIER = 3000;
 
 export const DEFAULT_SLIPPAGE = 100; // 1% = 100 basis points
+
+export const ERC20_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function approve(address spender, uint256 amount) returns (bool)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+];
 
 export function tokenBySymbol(symbol: string): string | undefined {
   const normalized = symbol.toUpperCase();

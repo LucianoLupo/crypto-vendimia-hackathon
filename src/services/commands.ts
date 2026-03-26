@@ -15,6 +15,7 @@ import { sendMessage } from './whatsapp';
 import { parseMessage } from './parser';
 import type { ParsedIntent } from './parser';
 import { TOKEN_ADDRESSES } from '../config/tokens';
+import { ORDER_STATUS, EXEC_STATUS } from '../config/constants';
 import { getQuote } from './swap';
 
 const SUPPORTED_TOKENS = ['RBTC', ...Object.keys(TOKEN_ADDRESSES)];
@@ -57,13 +58,13 @@ async function handleStart(whatsappId: string, user: User): Promise<void> {
 
     await sendMessage(
       whatsappId,
-      `Bienvenido a *SatsPilot*! Tu copiloto cripto en WhatsApp.\n\nTu wallet en Rootstock fue creada:\n*${address}*\n\nEnvia rUSDT o RBTC a esta direccion para empezar a invertir con DCA.\n\nEscribi *ayuda* para ver todos los comandos.`
+      `🚀 Bienvenido a *SatsPilot*! Tu copiloto cripto en WhatsApp.\n\nTu wallet en Rootstock fue creada:\n*${address}*\n\nEnviá rUSDT o RBTC a esta dirección para empezar a invertir con DCA.\n\nEscribí *ayuda* para ver todos los comandos.`
     );
   } else {
     const balance = await getWalletBalance(user.walletAddress);
     await sendMessage(
       whatsappId,
-      `Hola de nuevo!\n\nTu wallet: *${user.walletAddress}*\nBalance RBTC: ${parseFloat(balance).toFixed(8)}\n\nEscribi *estado* para ver tus ordenes o *ayuda* para los comandos.`
+      `Hola de nuevo!\n\nTu wallet: *${user.walletAddress}*\nBalance RBTC: ${parseFloat(balance).toFixed(8)}\n\nEscribí *estado* para ver tus órdenes o *ayuda* para los comandos.`
     );
   }
 }
@@ -76,18 +77,18 @@ async function handleDca(
   if (!params.token || !params.amount || !params.frequency) {
     await sendMessage(
       whatsappId,
-      'Para crear una orden DCA necesito:\n• *Token* a comprar (ej: RBTC, DOC, RIF)\n• *Monto* por ejecucion (en rUSDT)\n• *Frecuencia* (cada hora, diario, semanal)\n\nEjemplo: "Comprar 10 RBTC diario"'
+      'Para crear una orden DCA necesito:\n• *Token* a comprar (ej: RBTC, DOC, RIF)\n• *Monto* por ejecución (en rUSDT)\n• *Frecuencia* (cada hora, diario, semanal)\n\nEjemplo: "Comprar 10 RBTC diario"'
     );
     return;
   }
 
   const amountNum = parseFloat(params.amount);
   if (isNaN(amountNum) || amountNum <= 0) {
-    await sendMessage(whatsappId, 'Monto invalido. Ingresa un numero positivo.');
+    await sendMessage(whatsappId, 'Monto inválido. Ingresá un número positivo.');
     return;
   }
   if (amountNum > MAX_DCA_AMOUNT) {
-    await sendMessage(whatsappId, `Monto muy grande. Maximo por ejecucion: ${MAX_DCA_AMOUNT}.`);
+    await sendMessage(whatsappId, `Monto muy grande. Máximo por ejecución: ${MAX_DCA_AMOUNT}.`);
     return;
   }
 
@@ -104,12 +105,22 @@ async function handleDca(
   if (!validFrequencies.includes(params.frequency)) {
     await sendMessage(
       whatsappId,
-      `Frecuencia "${params.frequency}" invalida. Usa: hourly, daily o weekly.`
+      `Frecuencia "${params.frequency}" inválida. Usá: cada hora, diario o semanal.`
     );
     return;
   }
 
-  const fromToken = params.fromToken ?? 'RUSDT';
+  const fromToken = (params.fromToken ?? 'RUSDT').toUpperCase();
+  if (!SUPPORTED_TOKENS.includes(fromToken)) {
+    await sendMessage(whatsappId, `Token fuente "${fromToken}" no soportado.`);
+    return;
+  }
+
+  if (fromToken === normalizedToken) {
+    await sendMessage(whatsappId, 'El token de origen y destino no pueden ser el mismo.');
+    return;
+  }
+
   const nextExecution = calcNextExecution(params.frequency);
 
   const order = createDCAOrder({
@@ -118,27 +129,27 @@ async function handleDca(
     toToken: normalizedToken,
     amount: params.amount,
     frequency: params.frequency,
-    status: 'active',
+    status: ORDER_STATUS.ACTIVE,
     nextExecution,
   });
 
   let quoteInfo = '';
   try {
     const quote = await getQuote(fromToken, normalizedToken, params.amount);
-    quoteInfo = `\nCotizacion actual: ${params.amount} ${fromToken} ≈ ${quote} ${normalizedToken}`;
+    quoteInfo = `\nCotización actual: ${params.amount} ${fromToken} ≈ ${quote} ${normalizedToken}`;
   } catch {
-    quoteInfo = '\n(Cotizacion no disponible — se ejecutara a precio de mercado)';
+    quoteInfo = '\n(Cotización no disponible — se ejecutará a precio de mercado)';
   }
 
   await sendMessage(
     whatsappId,
-    `Orden DCA creada!\n\n*Comprar ${params.amount} ${fromToken} → ${normalizedToken}*\nFrecuencia: ${FREQ_LABELS[params.frequency] ?? params.frequency}\nProxima ejecucion: ${formatDate(nextExecution)}\nOrden #${order.id}${quoteInfo}\n\nEscribi *estado* para ver tus ordenes.`
+    `📊 Orden DCA creada!\n\n*Comprar ${params.amount} ${fromToken} → ${normalizedToken}*\nFrecuencia: ${FREQ_LABELS[params.frequency] ?? params.frequency}\nPróxima ejecución: ${formatDate(nextExecution)}\nOrden #${order.id}${quoteInfo}\n\nEscribí *estado* para ver tus órdenes.`
   );
 }
 
 async function handleBalance(whatsappId: string, user: User): Promise<void> {
   if (!user.walletAddress) {
-    await sendMessage(whatsappId, 'No tenes wallet. Escribi *start* para crear una.');
+    await sendMessage(whatsappId, 'No tenés wallet. Escribí *start* para crear una.');
     return;
   }
 
@@ -151,8 +162,8 @@ async function handleBalance(whatsappId: string, user: User): Promise<void> {
 
   await sendMessage(
     whatsappId,
-    `*Balance de tu Wallet*\n\n` +
-      `Direccion: ${user.walletAddress}\n\n` +
+    `💰 *Balance de tu Wallet*\n\n` +
+      `Dirección: ${user.walletAddress}\n\n` +
       `RBTC: ${parseFloat(rbtcBalance).toFixed(8)}\n` +
       `rUSDT: ${parseFloat(rusdtBalance).toFixed(2)}\n` +
       `DOC: ${parseFloat(docBalance).toFixed(2)}\n` +
@@ -167,12 +178,12 @@ async function handleStatus(whatsappId: string, user: User): Promise<void> {
   let msg = '*SatsPilot - Estado*\n\n';
 
   if (orders.length === 0) {
-    msg += 'No tenes ordenes DCA activas.\n';
+    msg += 'No tenés órdenes DCA activas.\n';
   } else {
-    msg += `*Ordenes activas (${orders.length}):*\n`;
+    msg += `*Órdenes activas (${orders.length}):*\n`;
     for (const order of orders) {
       msg += `\n#${order.id}: ${order.amount} ${order.fromToken} → ${order.toToken}\n`;
-      msg += `   ${FREQ_LABELS[order.frequency] ?? order.frequency} | Proxima: ${formatDate(order.nextExecution)}\n`;
+      msg += `   ${FREQ_LABELS[order.frequency] ?? order.frequency} | Próxima: ${formatDate(order.nextExecution)}\n`;
     }
   }
 
@@ -180,8 +191,8 @@ async function handleStatus(whatsappId: string, user: User): Promise<void> {
     msg += '\n*Ejecuciones recientes:*\n';
     for (const exec of executions) {
       const icon =
-        exec.status === 'completed' ? 'ok' : exec.status === 'failed' ? 'error' : 'pendiente';
-      msg += `[${icon}] ${formatDate(exec.executedAt)} — ${exec.amountIn} entrada`;
+        exec.status === EXEC_STATUS.COMPLETED ? '✅' : exec.status === EXEC_STATUS.FAILED ? '❌' : '⏳';
+      msg += `${icon} ${formatDate(exec.executedAt)} — ${exec.amountIn} entrada`;
       if (exec.amountOut) msg += ` → ${exec.amountOut} salida`;
       msg += '\n';
     }
@@ -198,7 +209,7 @@ async function handlePause(
   const orders = getActiveDCAOrders(user.id);
 
   if (orders.length === 0) {
-    await sendMessage(whatsappId, 'No tenes ordenes DCA activas para pausar.');
+    await sendMessage(whatsappId, 'No tenés órdenes DCA activas para pausar.');
     return;
   }
 
@@ -206,17 +217,17 @@ async function handlePause(
   if (params.orderId != null) {
     order = orders.find((o) => o.id === params.orderId);
     if (!order) {
-      await sendMessage(whatsappId, `No se encontro orden activa con ID #${params.orderId}.`);
+      await sendMessage(whatsappId, `No se encontró orden activa con ID #${params.orderId}.`);
       return;
     }
   } else {
     order = orders[orders.length - 1];
   }
 
-  updateOrderStatus(order.id, 'paused');
+  updateOrderStatus(order.id, ORDER_STATUS.PAUSED);
   await sendMessage(
     whatsappId,
-    `Orden #${order.id} pausada.\n${order.amount} ${order.fromToken} → ${order.toToken} (${FREQ_LABELS[order.frequency] ?? order.frequency})\n\nEscribi *reanudar* para reactivarla.`
+    `Orden #${order.id} pausada.\n${order.amount} ${order.fromToken} → ${order.toToken} (${FREQ_LABELS[order.frequency] ?? order.frequency})\n\nEscribí *reanudar* para reactivarla.`
   );
 }
 
@@ -228,11 +239,11 @@ async function handleResume(
   const pausedOrders = db
     .select()
     .from(schema.dcaOrders)
-    .where(and(eq(schema.dcaOrders.userId, user.id), eq(schema.dcaOrders.status, 'paused')))
+    .where(and(eq(schema.dcaOrders.userId, user.id), eq(schema.dcaOrders.status, ORDER_STATUS.PAUSED)))
     .all();
 
   if (pausedOrders.length === 0) {
-    await sendMessage(whatsappId, 'No tenes ordenes DCA pausadas.');
+    await sendMessage(whatsappId, 'No tenés órdenes DCA pausadas.');
     return;
   }
 
@@ -240,19 +251,19 @@ async function handleResume(
   if (params.orderId != null) {
     order = pausedOrders.find((o) => o.id === params.orderId);
     if (!order) {
-      await sendMessage(whatsappId, `No se encontro orden pausada con ID #${params.orderId}.`);
+      await sendMessage(whatsappId, `No se encontró orden pausada con ID #${params.orderId}.`);
       return;
     }
   } else {
     order = pausedOrders[pausedOrders.length - 1];
   }
 
-  updateOrderStatus(order.id, 'active');
+  updateOrderStatus(order.id, ORDER_STATUS.ACTIVE);
   updateOrderNextExecution(order.id, new Date().toISOString());
 
   await sendMessage(
     whatsappId,
-    `Orden #${order.id} reanudada!\n${order.amount} ${order.fromToken} → ${order.toToken} (${FREQ_LABELS[order.frequency] ?? order.frequency})\n\nSe ejecutara en breve.`
+    `Orden #${order.id} reanudada!\n${order.amount} ${order.fromToken} → ${order.toToken} (${FREQ_LABELS[order.frequency] ?? order.frequency})\n\nSe ejecutará en breve.`
   );
 }
 
@@ -264,11 +275,11 @@ async function handleCancel(
   const cancellableOrders = db
     .select()
     .from(schema.dcaOrders)
-    .where(and(eq(schema.dcaOrders.userId, user.id), ne(schema.dcaOrders.status, 'cancelled')))
+    .where(and(eq(schema.dcaOrders.userId, user.id), ne(schema.dcaOrders.status, ORDER_STATUS.CANCELLED)))
     .all();
 
   if (cancellableOrders.length === 0) {
-    await sendMessage(whatsappId, 'No tenes ordenes para cancelar.');
+    await sendMessage(whatsappId, 'No tenés órdenes para cancelar.');
     return;
   }
 
@@ -276,14 +287,14 @@ async function handleCancel(
   if (params.orderId != null) {
     order = cancellableOrders.find((o) => o.id === params.orderId);
     if (!order) {
-      await sendMessage(whatsappId, `No se encontro orden cancelable con ID #${params.orderId}.`);
+      await sendMessage(whatsappId, `No se encontró orden cancelable con ID #${params.orderId}.`);
       return;
     }
   } else {
     order = cancellableOrders[cancellableOrders.length - 1];
   }
 
-  updateOrderStatus(order.id, 'cancelled');
+  updateOrderStatus(order.id, ORDER_STATUS.CANCELLED);
   await sendMessage(
     whatsappId,
     `Orden #${order.id} cancelada.\n${order.amount} ${order.fromToken} → ${order.toToken} (${FREQ_LABELS[order.frequency] ?? order.frequency})`
@@ -292,30 +303,30 @@ async function handleCancel(
 
 async function handleDeposit(whatsappId: string, user: User): Promise<void> {
   if (!user.walletAddress) {
-    await sendMessage(whatsappId, 'No tenes wallet. Escribi *start* para crear una.');
+    await sendMessage(whatsappId, 'No tenés wallet. Escribí *start* para crear una.');
     return;
   }
 
   await sendMessage(
     whatsappId,
-    `*Direccion de deposito*\n\n*${user.walletAddress}*\n\nEnvia RBTC o rUSDT a esta direccion en la red Rootstock para fondear tus ordenes DCA.`
+    `📥 *Dirección de depósito*\n\n*${user.walletAddress}*\n\nEnviá RBTC o rUSDT a esta dirección en la red Rootstock para fondear tus órdenes DCA.`
   );
 }
 
 async function handleHelp(whatsappId: string): Promise<void> {
   await sendMessage(
     whatsappId,
-    `*SatsPilot - Comandos*\n\n` +
+    `📋 *SatsPilot - Comandos*\n\n` +
       `*start* — Registrarte o ver tu wallet\n` +
       `*balance* — Ver saldos de tu wallet\n` +
-      `*depositar* — Obtener tu direccion de deposito\n` +
-      `*estado* — Ver ordenes DCA activas e historial\n` +
+      `*depositar* — Obtener tu dirección de depósito\n` +
+      `*estado* — Ver órdenes DCA activas e historial\n` +
       `*ayuda* — Mostrar este mensaje\n\n` +
       `*Crear DCA:*\n` +
       `"Comprar 10 RBTC diario"\n` +
       `"Invertir 5 DOC semanal"\n` +
       `"DCA 1 rUSDT en RIF cada hora"\n\n` +
-      `*Gestionar ordenes:*\n` +
+      `*Gestionar órdenes:*\n` +
       `"Pausar orden #3"\n` +
       `"Reanudar mi DCA"\n` +
       `"Cancelar orden #2"\n\n` +
@@ -327,7 +338,7 @@ async function handleHelp(whatsappId: string): Promise<void> {
 async function handleUnknown(whatsappId: string): Promise<void> {
   await sendMessage(
     whatsappId,
-    `No entendi eso.\n\nPodes decirme algo como:\n• "Comprar 10 RBTC diario"\n• "Ver mi balance"\n• "Mostrar mis ordenes"\n\nEscribi *ayuda* para ver todos los comandos.`
+    `No entendí eso.\n\nPodés decirme algo como:\n• "Comprar 10 RBTC diario"\n• "Ver mi balance"\n• "Mostrar mis órdenes"\n\nEscribí *ayuda* para ver todos los comandos.`
   );
 }
 
@@ -340,7 +351,7 @@ export async function processMessage(
     intent = await parseMessage(messageText);
   } catch (err) {
     console.error('[commands] parseMessage failed:', err);
-    await sendMessage(whatsappId, 'Algo salio mal procesando tu mensaje. Intenta de nuevo.');
+    await sendMessage(whatsappId, 'Algo salió mal procesando tu mensaje. Intentá de nuevo.');
     return;
   }
 
@@ -393,7 +404,7 @@ export async function processMessage(
     console.error(`[commands] handler error for action=${intent.action}:`, err);
     await sendMessage(
       whatsappId,
-      'Algo salio mal. Intenta de nuevo o escribi *ayuda* para ver los comandos.'
+      'Algo salió mal. Intentá de nuevo o escribí *ayuda* para ver los comandos.'
     );
   }
 }
