@@ -51,7 +51,7 @@ AutoStack Backend (Node.js / TypeScript)
 | Layer | Technology |
 |-------|-----------|
 | WhatsApp API | [Kapso.ai](https://kapso.ai) |
-| AI/NLP | Claude Haiku via [OpenRouter](https://openrouter.ai) |
+| AI/NLP | Claude 3.5 Haiku via [OpenRouter](https://openrouter.ai) + local regex fallback |
 | Blockchain | [Rootstock](https://rootstock.io) (EVM, Bitcoin sidechain) |
 | DEX | Uniswap V3 (SwapRouter02 on RSK) |
 | Yield | [Sovryn](https://sovryn.app) iToken lending |
@@ -92,15 +92,17 @@ npm install
 cp .env.example .env
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `KAPSO_API_KEY` | Kapso.ai API key |
-| `KAPSO_WEBHOOK_SECRET` | Webhook HMAC secret from Kapso |
-| `KAPSO_PHONE_NUMBER_ID` | WhatsApp phone number ID |
-| `MASTER_MNEMONIC` | BIP39 mnemonic for HD wallet derivation |
-| `RSK_RPC_URL` | Rootstock RPC (`https://public-node.rsk.co`) |
-| `OPENROUTER_API_KEY` | OpenRouter API key for AI parsing |
-| `PORT` | Server port (default: 3000) |
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `KAPSO_API_KEY` | Kapso.ai API key | Yes |
+| `KAPSO_WEBHOOK_SECRET` | Webhook HMAC secret from Kapso | Yes |
+| `KAPSO_PHONE_NUMBER_ID` | WhatsApp phone number ID | Yes |
+| `MASTER_MNEMONIC` | BIP39 mnemonic for HD wallet derivation | Yes |
+| `RSK_RPC_URL` | Rootstock RPC (`https://public-node.rsk.co`) | Yes |
+| `OPENROUTER_API_KEY` | OpenRouter API key for AI parsing | Optional* |
+| `PORT` | Server port (default: 3000) | No |
+
+*Common commands (help, balance, status, start, DCA patterns) work via local regex without any API key. OpenRouter is only needed for natural language parsing ("I want to invest 5 dollars in bitcoin every week").
 
 ### Run
 
@@ -170,7 +172,7 @@ src/
 ├── routes/
 │   └── webhook.ts            # Kapso webhook handler
 └── services/
-    ├── parser.ts             # AI intent parser (regex + Claude Haiku)
+    ├── parser.ts             # AI intent parser (local regex + Claude 3.5 Haiku via OpenRouter)
     ├── commands.ts           # Command router & handlers
     ├── wallet.ts             # HD wallet derivation
     ├── swap.ts               # Uniswap V3 swap execution
