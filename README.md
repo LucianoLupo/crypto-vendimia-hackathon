@@ -1,84 +1,138 @@
-# AutoStack
+# SatsPilot
 
-**WhatsApp DCA + Auto-Yield bot on Rootstock** — Dollar-cost average into Bitcoin from WhatsApp, with AI-powered commands and automatic yield generation.
+**Tu copiloto cripto en WhatsApp** — DCA automatizado en Bitcoin desde WhatsApp, con comandos por lenguaje natural y generacion de yield automatica en Rootstock.
 
-> "Robinhood's recurring investments, but for Bitcoin, on WhatsApp, with AI that buys the dips and earns yield for you."
+## Que Hace
 
-## What It Does
+1. Mandas un mensaje de WhatsApp → "Quiero invertir 5 dolares en bitcoin cada semana"
+2. El bot parsea tu intencion (regex local o Claude 3.5 Haiku via OpenRouter)
+3. Crea una orden DCA que se ejecuta automaticamente en tu frecuencia elegida
+4. Ejecuta swaps en Uniswap V3 desplegado en Rootstock
+5. Auto-deposita los tokens comprados en Sovryn lending para generar yield
+6. Smart DCA: compra mas cuando el precio baja, menos cuando sube
 
-1. **Send a WhatsApp message** → "Buy 10 RBTC every week"
-2. **AI parses your intent** → Creates a DCA order
-3. **Bot executes swaps** on Uniswap V3 (Rootstock) at your chosen frequency
-4. **Auto-deposits** purchased tokens into Sovryn lending for ~5% APY
-5. **Smart DCA** — buys more when price dips, less when price spikes
+Sin MetaMask. Sin wallet connect. Solo WhatsApp.
 
-No MetaMask. No wallet connect. Just WhatsApp.
-
-## Architecture
+## Arquitectura
 
 ```
-WhatsApp User
-    │ "invest $10 in Bitcoin every week"
+Usuario WhatsApp
+    │ "comprar 10 RBTC diario"
     ▼
-Kapso.ai (WhatsApp Cloud API)
-    │ Webhook POST
+Kapso.ai (WhatsApp Cloud API de Meta)
+    │ Webhook POST con HMAC signature
     ▼
-AutoStack Backend (Node.js / TypeScript)
-    ├── AI Parser (Claude Haiku via OpenRouter)
-    ├── Command Router (start, dca, balance, status, help...)
-    ├── Wallet Manager (HD derivation per user)
-    ├── Swap Executor (Uniswap V3 on Rootstock)
+SatsPilot Backend (Node.js / TypeScript / Express)
+    ├── Parser de intenciones (regex local + Claude 3.5 Haiku via OpenRouter)
+    ├── Router de comandos (start, dca, balance, status, ayuda...)
+    ├── Wallet Manager (derivacion HD por usuario)
+    ├── Swap Executor (Uniswap V3 SwapRouter02 en Rootstock)
     ├── Yield Depositor (Sovryn iToken lending)
-    ├── DCA Scheduler (cron, every minute)
-    ├── Smart DCA (7-day SMA price analysis)
-    └── Deposit Watcher (RBTC + rUSDT monitoring)
+    ├── Scheduler DCA (node-cron, cada minuto)
+    ├── Smart DCA (analisis precio vs SMA 7 dias via CoinGecko)
+    └── Deposit Watcher (monitoreo de RBTC + rUSDT cada 60s)
         │
         ▼
-    Rootstock Blockchain (EVM, secured by Bitcoin hashrate)
+    Rootstock Blockchain (EVM, asegurada por el hashrate de Bitcoin)
 ```
 
 ## Features
 
-- **Natural Language DCA** — "Buy 5 RBTC daily", "Stack 10 DOC every week"
-- **Smart DCA** — Adjusts buy amounts based on price vs 7-day moving average
-- **Auto-Yield** — DCA'd tokens auto-deposited into Sovryn lending (~5% APY)
+- **DCA por lenguaje natural** — "Comprar 5 RBTC diario", "Invertir 10 DOC semanal"
+- **Smart DCA** — Ajusta montos basandose en precio actual vs SMA de 7 dias (CoinGecko)
+- **Auto-Yield** — Tokens comprados se depositan en Sovryn lending automaticamente
 - **Multi-Token** — RBTC, DOC, RIF, SOV, DLLR, rUSDT, USDC
-- **Wallet Management** — HD wallet per user, balances, deposit detection
-- **Order Management** — Pause, resume, cancel DCA orders via WhatsApp
+- **Wallet por usuario** — Derivacion HD deterministica desde un mnemonic maestro
+- **Gestion de ordenes** — Pausar, reanudar, cancelar ordenes DCA via WhatsApp
+- **Deteccion de depositos** — Notifica via WhatsApp cuando se detectan nuevos fondos
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| WhatsApp API | [Kapso.ai](https://kapso.ai) |
-| AI/NLP | Claude 3.5 Haiku via [OpenRouter](https://openrouter.ai) + local regex fallback |
-| Blockchain | [Rootstock](https://rootstock.io) (EVM, Bitcoin sidechain) |
-| DEX | Uniswap V3 (SwapRouter02 on RSK) |
+| Capa | Tecnologia |
+|------|-----------|
+| WhatsApp API | [Kapso.ai](https://kapso.ai) (wrapper oficial de Meta WhatsApp Cloud API) |
+| AI/NLP | Claude 3.5 Haiku via [OpenRouter](https://openrouter.ai) + regex local como fallback |
+| Blockchain | [Rootstock](https://rootstock.io) (sidechain EVM de Bitcoin) |
+| DEX | Uniswap V3 (SwapRouter02 desplegado en RSK) |
 | Yield | [Sovryn](https://sovryn.app) iToken lending |
 | Backend | Node.js, TypeScript, Express |
-| Database | SQLite via Drizzle ORM |
-| Scheduling | node-cron |
+| Base de datos | SQLite via better-sqlite3 + Drizzle ORM |
+| Scheduling | node-cron (cada minuto) |
 | Hosting | [Railway](https://railway.app) |
 
-## Rootstock Contract Addresses
+## Contratos en Rootstock
 
-| Contract | Address |
-|----------|---------|
-| SwapRouter02 | `0x0b14ff67f0014046b4b99057aec4509640b3947a` |
-| QuoterV2 | `0xb51727c996c68e60f598a923a5006853cd2feb31` |
+| Contrato | Direccion |
+|----------|-----------|
+| SwapRouter02 (Uniswap V3) | `0x0b14ff67f0014046b4b99057aec4509640b3947a` |
+| QuoterV2 (Uniswap V3) | `0xb51727c996c68e60f598a923a5006853cd2feb31` |
+| V3Factory (Uniswap V3) | `0xaf37ec98a00fd63689cf3060bf3b6784e00cad82` |
 | Sovryn iRBTC | `0xa9dcdc63eabb8a2b6f39d7ff9429d88340044a7a` |
+| Sovryn iDOC | `0xd8d25f03ebba94e15df2ed4d6d38276b595593c1` |
+| Sovryn iDLLR | `0x077fcb01cab070a30bc14b44559c96f529ee017f` |
 | WRBTC | `0x542fda317318ebf1d3deaf76e0b632741a7e677d` |
+| rUSDT | `0xef213441a85df4d7acbdae0cf78004e1e486bb96` |
+
+Todas las direcciones estan en lowercase para evitar problemas con el checksum EIP-1191 de RSK (chainId 30).
+
+## Seguridad y Modelo de Confianza
+
+### Modelo custodial
+
+SatsPilot es **custodial** — el servidor tiene el mnemonic maestro desde el cual se derivan todas las wallets de los usuarios. Esto significa:
+
+- **El operador del bot tiene acceso completo** a todos los fondos de todos los usuarios
+- **Si el servidor o las variables de entorno se comprometen**, todas las wallets estan en riesgo
+- Para un hackathon esto es aceptable con montos pequenos; para produccion se deberia migrar a smart contract vaults o account abstraction
+
+### Aislamiento entre usuarios
+
+- Cada usuario se identifica por su numero de WhatsApp (`from` field del webhook de Kapso)
+- Kapso/Meta garantizan la autenticidad del numero — no se puede spoofear
+- Todas las queries a la DB filtran por `user_id` — un usuario no puede ver ni operar las ordenes de otro
+- Las wallets se derivan deterministicamente: `m/44'/137'/0'/0/{userIndex}` — cada usuario tiene su propia wallet
+
+### Rol del modelo de IA (Claude 3.5 Haiku)
+
+El LLM funciona **unicamente como clasificador de intenciones**:
+
+- Recibe el texto del mensaje y devuelve un JSON con `action` y `params`
+- **No tiene acceso a tools**, wallets, claves privadas, ni al blockchain
+- **No puede inyectar direcciones** — los tokens se resuelven contra una whitelist hardcodeada en `tokens.ts`
+- **No puede ejecutar operaciones** — solo clasifica la intencion; el backend valida todo antes de ejecutar
+- Si el LLM devuelve un token no soportado, la validacion en `commands.ts` lo rechaza
+- Los comandos comunes (ayuda, balance, estado, DCA con patron simple) se parsean localmente con regex, sin llamar al LLM
+
+### Validaciones del backend
+
+- Montos validados: positivos, no mayores a 10,000 por ejecucion
+- Tokens validados contra whitelist (RBTC, DOC, RIF, SOV, DLLR, RUSDT, USDC)
+- Frecuencias validadas: solo hourly, daily, weekly
+- Approvals de tokens: monto exacto (no MaxUint256)
+- Swaps con deadline de 5 minutos (proteccion contra MEV)
+- Slippage: 1% por defecto
+- Guard de concurrencia en el scheduler (evita ejecuciones dobles)
+- Null checks en `tx.wait()` (ethers v6 puede devolver null si la tx se dropea)
+
+### Que NO se implemento (limitaciones del hackathon)
+
+- No hay encriptacion del mnemonic en reposo (se lee directo del env var)
+- No hay rate limiting en el webhook (cada request no autenticado igual se procesa)
+- No hay validacion de formato del numero de telefono
+- La base de datos SQLite no esta encriptada
+- No hay replay protection en webhooks (se verifica HMAC pero no se trackean message IDs)
+- Los errores de ethers.js se loguean completos (podrian filtrar info sensible)
 
 ## Setup
 
-### Prerequisites
+### Prerequisitos
 
 - Node.js 20+
-- [Kapso.ai](https://kapso.ai) account (free tier — 2,000 msgs/mo)
-- [OpenRouter](https://openrouter.ai) API key
-- [Railway](https://railway.app) account (for deployment)
+- Cuenta en [Kapso.ai](https://kapso.ai) (tier gratis — 2,000 msgs/mes)
+- API key de [OpenRouter](https://openrouter.ai) (opcional — regex local cubre comandos basicos)
+- Cuenta en [Railway](https://railway.app) (para deploy)
 
-### Install
+### Instalacion
 
 ```bash
 git clone https://github.com/LucianoLupo/crypto-vendimia-hackathon.git
@@ -86,101 +140,110 @@ cd crypto-vendimia-hackathon
 npm install
 ```
 
-### Environment Variables
+### Variables de Entorno
 
 ```bash
 cp .env.example .env
 ```
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `KAPSO_API_KEY` | Kapso.ai API key | Yes |
-| `KAPSO_WEBHOOK_SECRET` | Webhook HMAC secret from Kapso | Yes |
-| `KAPSO_PHONE_NUMBER_ID` | WhatsApp phone number ID | Yes |
-| `MASTER_MNEMONIC` | BIP39 mnemonic for HD wallet derivation | Yes |
-| `RSK_RPC_URL` | Rootstock RPC (`https://public-node.rsk.co`) | Yes |
-| `OPENROUTER_API_KEY` | OpenRouter API key for AI parsing | Optional* |
-| `PORT` | Server port (default: 3000) | No |
+| Variable | Descripcion | Requerida |
+|----------|-------------|-----------|
+| `KAPSO_API_KEY` | API key de Kapso.ai | Si |
+| `KAPSO_WEBHOOK_SECRET` | Secret HMAC del webhook de Kapso | Si |
+| `KAPSO_PHONE_NUMBER_ID` | ID del numero de telefono de WhatsApp | Si |
+| `MASTER_MNEMONIC` | Mnemonic BIP39 para derivacion de wallets HD | Si |
+| `RSK_RPC_URL` | RPC de Rootstock (`https://public-node.rsk.co`) | Si |
+| `OPENROUTER_API_KEY` | API key de OpenRouter para parsing con IA | Opcional* |
+| `PORT` | Puerto del servidor (default: 3000) | No |
 
-*Common commands (help, balance, status, start, DCA patterns) work via local regex without any API key. OpenRouter is only needed for natural language parsing ("I want to invest 5 dollars in bitcoin every week").
+*Los comandos comunes (ayuda, balance, estado, start, patrones de DCA) funcionan via regex local sin API key. OpenRouter solo se necesita para parsing de lenguaje natural ("quiero invertir 5 dolares en bitcoin cada semana").
 
-### Run
+### Ejecutar
 
 ```bash
-# Development
+# Desarrollo
 npm run dev
 
-# Production
+# Produccion
 npm run build
 npm start
 ```
 
-### Deploy to Railway
+### Deploy en Railway
 
 ```bash
 railway init
 railway up
-railway domain  # Get your public URL
+railway domain  # Obtener URL publica
 ```
 
-Then set the Railway URL + `/webhook` as your Kapso webhook endpoint.
+Configurar la URL de Railway + `/webhook` como endpoint del webhook en Kapso.
 
-## WhatsApp Commands
+## Comandos de WhatsApp
 
-| Command | Example |
+El bot acepta comandos en espanol e ingles:
+
+| Comando | Ejemplo |
 |---------|---------|
-| **Start** | "hello", "start" |
-| **DCA** | "buy 10 RBTC daily", "stack 5 DOC weekly" |
-| **Balance** | "check my balance", "balance" |
-| **Status** | "show my orders", "status" |
-| **Pause** | "pause order #3" |
-| **Resume** | "resume" |
-| **Cancel** | "cancel order #2" |
-| **Deposit** | "deposit", "my address" |
-| **Help** | "help" |
+| **Empezar** | "hola", "start", "buenas" |
+| **DCA** | "comprar 10 RBTC diario", "invertir 5 DOC semanal" |
+| **Balance** | "saldo", "balance", "ver mi balance" |
+| **Estado** | "estado", "mis ordenes", "status" |
+| **Pausar** | "pausar orden #3", "pausar" |
+| **Reanudar** | "reanudar", "continuar" |
+| **Cancelar** | "cancelar orden #2", "cancelar" |
+| **Depositar** | "depositar", "mi direccion" |
+| **Ayuda** | "ayuda", "help", "comandos" |
 
-## How DCA + Yield Works
+## Como Funciona el DCA + Yield
 
 ```
-User sets up: "Buy 10 rUSDT worth of RBTC daily"
+Usuario configura: "Comprar 10 rUSDT en RBTC diario"
     │
-    ▼ Every day (cron scheduler)
+    ▼ Cada dia (scheduler cron, corre cada minuto)
     │
-    ├── Smart DCA checks price vs 7-day SMA
-    │   ├── Price 5%+ below SMA → buy 15 rUSDT (50% more)
-    │   ├── Price 5%+ above SMA → buy 5 rUSDT (50% less)
-    │   └── Normal range → buy 10 rUSDT (base amount)
+    ├── Smart DCA consulta precio actual vs SMA 7 dias (CoinGecko API)
+    │   ├── Precio 5%+ debajo del SMA → compra 15 rUSDT (50% mas)
+    │   ├── Precio 5%+ arriba del SMA → compra 5 rUSDT (50% menos)
+    │   └── Rango normal → compra 10 rUSDT (monto base)
     │
-    ├── Execute swap on Uniswap V3 (rUSDT → RBTC)
+    ├── Ejecuta swap en Uniswap V3 (rUSDT → WRBTC via SwapRouter02)
+    │   ├── Obtiene quote via QuoterV2
+    │   ├── Aplica 1% slippage tolerance
+    │   ├── Approve del monto exacto al router
+    │   └── exactInputSingle con deadline de 5 minutos
     │
-    ├── Auto-deposit RBTC into Sovryn iRBTC (~5% APY)
+    ├── Auto-deposita RBTC en Sovryn iRBTC (si autoYield esta activado)
+    │   └── Llama iToken.mint() con el monto recibido del swap
     │
-    └── Notify user via WhatsApp with tx links
+    ├── Registra ejecucion en DB (tx hashes, montos, estado)
+    │
+    └── Notifica al usuario via WhatsApp con links al explorer
 ```
 
-## Project Structure
+## Estructura del Proyecto
 
 ```
 src/
-├── index.ts                  # Express app entry
+├── index.ts                  # Entry point: Express + scheduler + deposit watcher
 ├── config/
-│   ├── env.ts                # Zod-validated environment
-│   └── tokens.ts             # RSK token/contract addresses
+│   ├── env.ts                # Validacion de env vars con Zod (falla al iniciar si faltan)
+│   └── tokens.ts             # Direcciones de tokens y contratos en RSK (hardcoded)
 ├── db/
-│   ├── schema.ts             # Drizzle schema (users, orders, executions)
-│   └── index.ts              # SQLite + queries
+│   ├── schema.ts             # Drizzle schema: users, dca_orders, executions
+│   └── index.ts              # Conexion SQLite + funciones de query
 ├── routes/
-│   └── webhook.ts            # Kapso webhook handler
+│   └── webhook.ts            # Handler de webhook de Kapso (parsea payload batched)
 └── services/
-    ├── parser.ts             # AI intent parser (local regex + Claude 3.5 Haiku via OpenRouter)
-    ├── commands.ts           # Command router & handlers
-    ├── wallet.ts             # HD wallet derivation
-    ├── swap.ts               # Uniswap V3 swap execution
-    ├── yield.ts              # Sovryn iToken deposit/withdraw
-    ├── scheduler.ts          # Cron-based DCA execution
-    ├── smart-dca.ts          # Price vs SMA analysis
-    ├── deposit-watcher.ts    # Balance change detection
-    └── whatsapp.ts           # Kapso message sender
+    ├── parser.ts             # Clasificador de intenciones: regex local → OpenRouter fallback
+    ├── commands.ts           # Router de comandos: despacha a handlers por accion
+    ├── wallet.ts             # Derivacion HD (m/44'/137'/0'/0/{n}), balances on-chain
+    ├── swap.ts               # Swaps Uniswap V3: quote, approve, exactInputSingle
+    ├── yield.ts              # Depositos Sovryn: iToken.mint/burn, balance checking
+    ├── scheduler.ts          # Cron cada minuto: busca ordenes vencidas, ejecuta swap+yield
+    ├── smart-dca.ts          # Precio vs SMA 7 dias (CoinGecko), ajusta monto ±50%
+    ├── deposit-watcher.ts    # Polling cada 60s: detecta nuevos depositos RBTC + rUSDT
+    └── whatsapp.ts           # Envio de mensajes via Kapso REST API
 ```
 
 ## Built For
