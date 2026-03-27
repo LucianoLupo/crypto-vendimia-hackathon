@@ -132,30 +132,15 @@ async function handleDca(
     nextExecution,
   });
 
-  const yieldTokens = getSupportedYieldTokens();
-  const yieldNote = yieldTokens.includes(normalizedToken)
-    ? ''
-    : `\n⚠️ Auto-yield no disponible para ${normalizedToken}.`;
-
   await sendMessage(
     whatsappId,
-    `📊 Orden DCA creada!\n\n*Comprar ${params.amount} ${fromToken} → ${normalizedToken}*\nFrecuencia: ${FREQ_LABELS[params.frequency] ?? params.frequency}\nOrden #${order.id}${yieldNote}\n\n🔄 Ejecutando primera compra ahora...`
+    `📊 Orden DCA creada!\n\n*Comprar ${params.amount} ${fromToken} → ${normalizedToken}*\nFrecuencia: ${FREQ_LABELS[params.frequency] ?? params.frequency}\nOrden #${order.id}\n\n🔄 Ejecutando primera compra ahora...`
   );
 
   // Execute first buy immediately
   try {
     const wallet = getUserWallet(user.walletIndex);
     const swapResult = await executeSwap(wallet, fromToken, normalizedToken, params.amount);
-
-    let yieldInfo = '';
-    if (yieldTokens.includes(normalizedToken)) {
-      try {
-        const yieldResult = await depositToYield(wallet, normalizedToken, swapResult.amountOut);
-        yieldInfo = `\n📈 Yield: depositado en Sovryn (${yieldResult.iTokensReceived} i${normalizedToken})`;
-      } catch {
-        yieldInfo = `\n⚠️ Yield no disponible, tokens en tu wallet.`;
-      }
-    }
 
     logExecution({
       dcaOrderId: order.id,
@@ -171,7 +156,7 @@ async function handleDca(
 
     await sendMessage(
       whatsappId,
-      `✅ Primera compra ejecutada!\n\n${params.amount} ${fromToken} → ${swapResult.amountOut} ${normalizedToken}\nTx: ${EXPLORER_URL}/tx/${swapResult.txHash}${yieldInfo}\n\nPróxima ejecución: ${formatDate(nextExecution)}`
+      `✅ Primera compra ejecutada!\n\n${params.amount} ${fromToken} → ${swapResult.amountOut} ${normalizedToken}\nTx: ${EXPLORER_URL}/tx/${swapResult.txHash}\n\nPróxima ejecución: ${formatDate(nextExecution)}`
     );
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
