@@ -28,9 +28,10 @@ SatsPilot Backend (Node.js / TypeScript / Express)
     ├── Wallet Manager (derivacion HD por usuario)
     ├── Swap Executor (Uniswap V3 SwapRouter02 en Rootstock)
     ├── Yield Depositor (Sovryn iToken lending)
+    ├── Idle Yield (Tropykus kDOC ~5% APY para DOC libres)
     ├── Scheduler DCA (node-cron, cada minuto)
     ├── Smart DCA (analisis precio vs SMA 7 dias via CoinGecko)
-    └── Deposit Watcher (monitoreo de RBTC + rUSDT cada 60s)
+    └── Deposit Watcher (monitoreo de RBTC + rUSDT + DOC cada 60s)
         │
         ▼
     Rootstock Blockchain (EVM, asegurada por el hashrate de Bitcoin)
@@ -41,6 +42,7 @@ SatsPilot Backend (Node.js / TypeScript / Express)
 - **DCA por lenguaje natural** — "Comprar 5 RBTC diario", "Invertir 10 DOC semanal"
 - **Smart DCA** — Ajusta montos basandose en precio actual vs SMA de 7 dias (CoinGecko)
 - **Auto-Yield** — Tokens comprados se depositan en Sovryn lending automaticamente
+- **Idle Yield** — DOC libres generan ~5% anual en Tropykus kDOC mientras esperan el proximo DCA
 - **Multi-Token** — RBTC, DOC, RIF, SOV, DLLR, rUSDT, USDC
 - **Wallet por usuario** — Derivacion HD deterministica desde un mnemonic maestro
 - **Gestion de ordenes** — Pausar, reanudar, cancelar ordenes DCA via WhatsApp
@@ -54,7 +56,7 @@ SatsPilot Backend (Node.js / TypeScript / Express)
 | AI/NLP | Claude 3.5 Haiku via [OpenRouter](https://openrouter.ai) + regex local como fallback |
 | Blockchain | [Rootstock](https://rootstock.io) (sidechain EVM de Bitcoin) |
 | DEX | Uniswap V3 (SwapRouter02 desplegado en RSK) |
-| Yield | [Sovryn](https://sovryn.app) iToken lending |
+| Yield | [Sovryn](https://sovryn.app) iToken lending + [Tropykus](https://tropykus.com) kDOC idle yield |
 | Backend | Node.js, TypeScript, Express |
 | Base de datos | SQLite via better-sqlite3 + Drizzle ORM |
 | Scheduling | node-cron (cada minuto) |
@@ -70,8 +72,10 @@ SatsPilot Backend (Node.js / TypeScript / Express)
 | Sovryn iRBTC | `0xa9dcdc63eabb8a2b6f39d7ff9429d88340044a7a` |
 | Sovryn iDOC | `0xd8d25f03ebba94e15df2ed4d6d38276b595593c1` |
 | Sovryn iDLLR | `0x077fcb01cab070a30bc14b44559c96f529ee017f` |
+| Tropykus kDOC | `0x544eb90e766b405134b3b3f62b6b4c23fcd5fda2` |
 | WRBTC | `0x542fda317318ebf1d3deaf76e0b632741a7e677d` |
 | rUSDT | `0xef213441a85df4d7acbdae0cf78004e1e486bb96` |
+| DOC | `0xe700691da7b9851f2f35f8b8182c69c53ccad9db` |
 
 Todas las direcciones estan en lowercase para evitar problemas con el checksum EIP-1191 de RSK (chainId 30).
 
@@ -193,21 +197,24 @@ El bot acepta comandos en espanol e ingles:
 | **Reanudar** | "reanudar", "continuar" |
 | **Cancelar** | "cancelar orden #2", "cancelar" |
 | **Depositar** | "depositar", "mi direccion" |
+| **Invertir** | "invertir", "parquear" (deposita DOC en Tropykus ~5% APY) |
 | **Ayuda** | "ayuda", "help", "comandos" |
 
 ## Como Funciona el DCA + Yield
 
 ```
-Usuario configura: "Comprar 10 rUSDT en RBTC diario"
+Usuario configura: "Comprar 10 RBTC diario" (default: DOC como token fuente)
     │
     ▼ Cada dia (scheduler cron, corre cada minuto)
     │
-    ├── Smart DCA consulta precio actual vs SMA 7 dias (CoinGecko API)
-    │   ├── Precio 5%+ debajo del SMA → compra 15 rUSDT (50% mas)
-    │   ├── Precio 5%+ arriba del SMA → compra 5 rUSDT (50% menos)
-    │   └── Rango normal → compra 10 rUSDT (monto base)
+    ├── Idle Yield: retira DOC de Tropykus kDOC si hay fondos parqueados
     │
-    ├── Ejecuta swap en Uniswap V3 (rUSDT → WRBTC via SwapRouter02)
+    ├── Smart DCA consulta precio actual vs SMA 7 dias (CoinGecko API)
+    │   ├── Precio 5%+ debajo del SMA → compra 15 DOC (50% mas)
+    │   ├── Precio 5%+ arriba del SMA → compra 5 DOC (50% menos)
+    │   └── Rango normal → compra 10 DOC (monto base)
+    │
+    ├── Ejecuta swap en Uniswap V3 (DOC → WRBTC via SwapRouter02)
     │   ├── Obtiene quote via QuoterV2
     │   ├── Aplica 1% slippage tolerance
     │   ├── Approve del monto exacto al router
@@ -215,6 +222,8 @@ Usuario configura: "Comprar 10 rUSDT en RBTC diario"
     │
     ├── Auto-deposita RBTC en Sovryn iRBTC (si autoYield esta activado)
     │   └── Llama iToken.mint() con el monto recibido del swap
+    │
+    ├── Idle Yield: re-deposita DOC restante en Tropykus kDOC (si > 100 DOC)
     │
     ├── Registra ejecucion en DB (tx hashes, montos, estado)
     │
@@ -240,9 +249,10 @@ src/
     ├── wallet.ts             # Derivacion HD (m/44'/137'/0'/0/{n}), balances on-chain
     ├── swap.ts               # Swaps Uniswap V3: quote, approve, exactInputSingle
     ├── yield.ts              # Depositos Sovryn: iToken.mint/burn, balance checking
+    ├── idle-yield.ts         # Tropykus kDOC: park/unpark DOC libres para generar yield
     ├── scheduler.ts          # Cron cada minuto: busca ordenes vencidas, ejecuta swap+yield
     ├── smart-dca.ts          # Precio vs SMA 7 dias (CoinGecko), ajusta monto ±50%
-    ├── deposit-watcher.ts    # Polling cada 60s: detecta nuevos depositos RBTC + rUSDT
+    ├── deposit-watcher.ts    # Polling cada 60s: detecta nuevos depositos RBTC + rUSDT + DOC
     └── whatsapp.ts           # Envio de mensajes via Kapso REST API
 ```
 

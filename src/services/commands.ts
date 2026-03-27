@@ -18,6 +18,7 @@ import { TOKEN_ADDRESSES } from '../config/tokens';
 import { ORDER_STATUS, EXEC_STATUS } from '../config/constants';
 import { getQuote } from './swap';
 import { getSupportedYieldTokens } from './yield';
+import { parkIdleFunds, getIdleYieldBalance } from './idle-yield';
 import { calcNextExecution } from '../utils/time';
 
 const SUPPORTED_TOKENS = ['RBTC', ...Object.keys(TOKEN_ADDRESSES)];
@@ -104,7 +105,7 @@ async function handleDca(
     return;
   }
 
-  const fromToken = (params.fromToken ?? 'RUSDT').toUpperCase();
+  const fromToken = (params.fromToken ?? 'DOC').toUpperCase();
   if (!SUPPORTED_TOKENS.includes(fromToken)) {
     await sendMessage(whatsappId, `Token fuente "${fromToken}" no soportado.`);
     return;
@@ -152,12 +153,20 @@ async function handleBalance(whatsappId: string, user: User): Promise<void> {
     return;
   }
 
-  const [rbtcBalance, rusdtBalance, docBalance, rifBalance] = await Promise.all([
+  const [rbtcBalance, rusdtBalance, docBalance, rifBalance, idleYield] = await Promise.all([
     getWalletBalance(user.walletAddress),
     getTokenBalance(user.walletAddress, TOKEN_ADDRESSES.RUSDT),
     getTokenBalance(user.walletAddress, TOKEN_ADDRESSES.DOC),
     getTokenBalance(user.walletAddress, TOKEN_ADDRESSES.RIF),
+    getIdleYieldBalance(user.walletAddress),
   ]);
+
+  const idleDocValue = parseFloat(idleYield.docValue);
+  const freeDoc = parseFloat(docBalance);
+  const totalDoc = freeDoc + idleDocValue;
+  const docLine = idleDocValue > 0
+    ? `DOC: ${totalDoc.toFixed(2)} (generando ~5% anual en Tropykus)`
+    : `DOC: ${freeDoc.toFixed(2)}`;
 
   await sendMessage(
     whatsappId,
@@ -165,7 +174,7 @@ async function handleBalance(whatsappId: string, user: User): Promise<void> {
       `Dirección: ${user.walletAddress}\n\n` +
       `RBTC: ${parseFloat(rbtcBalance).toFixed(8)}\n` +
       `rUSDT: ${parseFloat(rusdtBalance).toFixed(2)}\n` +
-      `DOC: ${parseFloat(docBalance).toFixed(2)}\n` +
+      `${docLine}\n` +
       `RIF: ${parseFloat(rifBalance).toFixed(4)}`
   );
 }
@@ -312,6 +321,39 @@ async function handleDeposit(whatsappId: string, user: User): Promise<void> {
   );
 }
 
+async function handlePark(whatsappId: string, user: User): Promise<void> {
+  if (!user.walletAddress) {
+    await sendMessage(whatsappId, 'No tenés wallet. Escribí *start* para crear una.');
+    return;
+  }
+
+  const wallet = getUserWallet(user.walletIndex);
+  const docBalance = await getTokenBalance(user.walletAddress, TOKEN_ADDRESSES.DOC);
+  const freeDoc = parseFloat(docBalance);
+
+  if (freeDoc < 100) {
+    await sendMessage(
+      whatsappId,
+      `Necesitás al menos 100 DOC libres para invertir en Tropykus.\nTu saldo DOC libre: ${freeDoc.toFixed(2)}`
+    );
+    return;
+  }
+
+  try {
+    const result = await parkIdleFunds(wallet, docBalance);
+    await sendMessage(
+      whatsappId,
+      `Tus ${freeDoc.toFixed(2)} DOC fueron depositados en Tropykus kDOC para generar ~5% anual.\nTx: https://explorer.rootstock.io/tx/${result.txHash}\n\nEscribí *balance* para ver tu saldo actualizado.`
+    );
+  } catch (err) {
+    console.error('[commands] handlePark failed:', err);
+    await sendMessage(
+      whatsappId,
+      `No se pudo depositar en Tropykus. Intentá de nuevo más tarde.`
+    );
+  }
+}
+
 async function handleHelp(whatsappId: string): Promise<void> {
   await sendMessage(
     whatsappId,
@@ -319,16 +361,19 @@ async function handleHelp(whatsappId: string): Promise<void> {
       `*start* — Registrarte o ver tu wallet\n` +
       `*balance* — Ver saldos de tu wallet\n` +
       `*depositar* — Obtener tu dirección de depósito\n` +
+      `*invertir* — Depositar tus DOC en Tropykus (~5% anual)\n` +
       `*estado* — Ver órdenes DCA activas e historial\n` +
       `*ayuda* — Mostrar este mensaje\n\n` +
       `*Crear DCA:*\n` +
       `"Comprar 10 RBTC diario"\n` +
-      `"Invertir 5 DOC semanal"\n` +
+      `"Invertir 5 DOC semanal en RBTC"\n` +
       `"DCA 1 rUSDT en RIF cada hora"\n\n` +
       `*Gestionar órdenes:*\n` +
       `"Pausar orden #3"\n` +
       `"Reanudar mi DCA"\n` +
       `"Cancelar orden #2"\n\n` +
+      `DOC es la stablecoin por defecto (dólar on-chain respaldado por BTC).\n` +
+      `Tus DOC libres pueden generar ~5% anual en Tropykus — escribí *invertir*.\n\n` +
       `Tokens soportados: RBTC, DOC, RIF, rUSDT, SOV, DLLR, USDC\n` +
       `Frecuencias: cada hora, diario, semanal`
   );
@@ -390,6 +435,9 @@ export async function processMessage(
         break;
       case 'deposit':
         await handleDeposit(whatsappId, user);
+        break;
+      case 'park':
+        await handlePark(whatsappId, user);
         break;
       case 'help':
         await handleHelp(whatsappId);

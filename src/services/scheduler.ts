@@ -3,13 +3,16 @@ import { eq } from 'drizzle-orm';
 import { parseEther } from 'ethers';
 import { getDueOrders, updateOrderNextExecution, updateOrderStatus, logExecution, incrementFailureCount, resetFailureCount, db } from '../db';
 import * as schema from '../db/schema';
-import { getUserWallet, getProvider } from './wallet';
+import { getUserWallet, getProvider, getTokenBalance } from './wallet';
 import { executeSwap } from './swap';
 import { depositToYield } from './yield';
+import { unparkIdleFunds, parkIdleFunds, getIdleYieldBalance, isIdleYieldSupported } from './idle-yield';
 import { sendMessage } from './whatsapp';
 import { calculateSmartAmount } from './smart-dca';
 import { EXEC_STATUS, ORDER_STATUS } from '../config/constants';
+import { TOKEN_ADDRESSES } from '../config/tokens';
 import { calcNextExecution } from '../utils/time';
+import { parseUnits } from 'ethers';
 
 const MAX_CONSECUTIVE_FAILURES = 3;
 const MIN_GAS_BALANCE = parseEther('0.00005');
@@ -71,6 +74,22 @@ async function processDueOrders(): Promise<void> {
         smartDcaReason = smartResult.reason;
         console.log(`[scheduler] Smart DCA order=${order.id}: base=${order.amount} adjusted=${effectiveAmount} reason="${smartDcaReason}"`);
 
+        // Idle yield: unpark DOC from Tropykus kDOC before swap
+        if (isIdleYieldSupported(order.fromToken)) {
+          try {
+            const yieldBalance = await getIdleYieldBalance(wallet.address);
+            const yieldVal = parseFloat(yieldBalance.docValue);
+            if (yieldVal > 0) {
+              const needed = parseFloat(effectiveAmount);
+              const unparkAmount = Math.min(needed, yieldVal).toString();
+              console.log(`[scheduler] Unparking ${unparkAmount} DOC from kDOC for order ${order.id}`);
+              await unparkIdleFunds(wallet, unparkAmount);
+            }
+          } catch (unparkErr) {
+            console.error(`[scheduler] Idle yield unpark failed for order ${order.id}, proceeding with free DOC:`, unparkErr);
+          }
+        }
+
         const swapResult = await executeSwap(wallet, order.fromToken, order.toToken, effectiveAmount);
         swapTxHash = swapResult.txHash;
         amountOut = swapResult.amountOut;
@@ -88,6 +107,21 @@ async function processDueOrders(): Promise<void> {
           } catch (yieldErr) {
             console.error(`[scheduler] Yield failed for order ${order.id}:`, yieldErr);
             errorMsg = `Yield failed: ${yieldErr instanceof Error ? yieldErr.message : String(yieldErr)}`;
+          }
+        }
+
+        // Idle yield: re-park remaining DOC into Tropykus kDOC after swap
+        if (isIdleYieldSupported(order.fromToken)) {
+          try {
+            const freeDoc = await getTokenBalance(wallet.address, TOKEN_ADDRESSES.DOC);
+            const freeDocBigInt = parseUnits(freeDoc, 18);
+            const minPark = parseUnits('100', 18);
+            if (freeDocBigInt > minPark) {
+              console.log(`[scheduler] Re-parking ${freeDoc} DOC into kDOC for order ${order.id}`);
+              await parkIdleFunds(wallet, freeDoc);
+            }
+          } catch (parkErr) {
+            console.error(`[scheduler] Idle yield re-park failed for order ${order.id}:`, parkErr);
           }
         }
       } catch (swapErr) {

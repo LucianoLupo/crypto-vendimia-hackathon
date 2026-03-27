@@ -9,6 +9,7 @@ const DCA_COOLDOWN_MS = 120_000; // 2 minutes
 
 const lastKnownRbtc = new Map<string, string>();
 const lastKnownRusdt = new Map<string, string>();
+const lastKnownDoc = new Map<string, string>();
 let watcherInterval: ReturnType<typeof setInterval> | null = null;
 let isFirstRun = true;
 
@@ -19,9 +20,10 @@ async function checkDeposits(): Promise<void> {
     if (!user.walletAddress) continue;
 
     try {
-      const [rbtcBalance, rusdtBalance] = await Promise.all([
+      const [rbtcBalance, rusdtBalance, docBalance] = await Promise.all([
         getWalletBalance(user.walletAddress),
         getTokenBalance(user.walletAddress, TOKEN_ADDRESSES.RUSDT),
+        getTokenBalance(user.walletAddress, TOKEN_ADDRESSES.DOC),
       ]);
 
       if (!isFirstRun) {
@@ -48,11 +50,21 @@ async function checkDeposits(): Promise<void> {
               `📥 Depósito detectado! +${diff} rUSDT recibidos.\nNuevo saldo: ${parseFloat(rusdtBalance).toFixed(2)} rUSDT\n\nEscribí *ayuda* para configurar tu DCA.`
             );
           }
+
+          const lastDoc = lastKnownDoc.get(user.walletAddress);
+          if (lastDoc !== undefined && parseFloat(docBalance) > parseFloat(lastDoc)) {
+            const diff = (parseFloat(docBalance) - parseFloat(lastDoc)).toFixed(2);
+            await sendMessage(
+              user.whatsappId,
+              `📥 Depósito detectado: +${diff} DOC recibidos.\nNuevo saldo: ${parseFloat(docBalance).toFixed(2)} DOC\n\nEscribí *invertir* para generar ~5% anual en Tropykus mientras esperás tu próximo DCA.`
+            );
+          }
         }
       }
 
       lastKnownRbtc.set(user.walletAddress, rbtcBalance);
       lastKnownRusdt.set(user.walletAddress, rusdtBalance);
+      lastKnownDoc.set(user.walletAddress, docBalance);
     } catch (err) {
       console.error(`[deposit-watcher] Failed to check balance for user ${user.walletAddress}:`, err);
     }

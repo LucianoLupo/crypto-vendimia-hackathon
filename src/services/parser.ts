@@ -1,7 +1,7 @@
 import { env } from '../config/env';
 
 export type ParsedIntent = {
-  action: 'start' | 'dca' | 'balance' | 'status' | 'pause' | 'resume' | 'cancel' | 'help' | 'deposit' | 'unknown';
+  action: 'start' | 'dca' | 'balance' | 'status' | 'pause' | 'resume' | 'cancel' | 'help' | 'deposit' | 'park' | 'unknown';
   params: {
     token?: string;
     fromToken?: string;
@@ -18,24 +18,25 @@ const SYSTEM_PROMPT = `Sos un parser de intenciones para SatsPilot, un bot de Wh
 El usuario habla en español (argentino). Parseá el mensaje y respondé ÚNICAMENTE con un JSON válido — sin markdown, sin explicación, sin texto extra.
 
 Tokens soportados: RBTC, DOC, RIF, rUSDT, SOV, DLLR, USDC
-Token fuente por defecto para DCA: rUSDT
+Token fuente por defecto para DCA: DOC
 Frecuencias soportadas: hourly (cada hora), daily (diario), weekly (semanal)
 
 Acciones:
 - "start": el usuario quiere registrarse, ver su wallet, o saluda (hola, buenas, etc)
-- "dca": quiere configurar una compra recurrente. Extraer: token (destino), amount (monto por ejecución), frequency, fromToken (fuente, default rUSDT)
+- "dca": quiere configurar una compra recurrente. Extraer: token (destino), amount (monto por ejecución), frequency, fromToken (fuente, default DOC)
 - "balance": quiere ver los saldos de su wallet
 - "status": quiere ver sus órdenes DCA activas y el historial
 - "pause": quiere pausar una orden DCA. Extraer orderId si lo menciona.
 - "resume": quiere reanudar una orden pausada. Extraer orderId si lo menciona.
 - "cancel": quiere cancelar/eliminar una orden. Extraer orderId si lo menciona.
 - "deposit": quiere su dirección de wallet para depositar fondos
+- "park": quiere depositar sus DOC libres en Tropykus para generar yield (~5% anual). Palabras clave: invertir mis DOC, parquear, park
 - "help": quiere ayuda, lista de comandos, o qué puede hacer el bot
 - "unknown": el mensaje no coincide con ninguna acción
 
 Esquema JSON:
 {
-  "action": "start" | "dca" | "balance" | "status" | "pause" | "resume" | "cancel" | "help" | "deposit" | "unknown",
+  "action": "start" | "dca" | "balance" | "status" | "pause" | "resume" | "cancel" | "help" | "deposit" | "park" | "unknown",
   "params": {
     "token": string | undefined,
     "fromToken": string | undefined,
@@ -47,8 +48,10 @@ Esquema JSON:
 }
 
 Ejemplos:
-- "comprar 10 RBTC diario" → {"action":"dca","params":{"token":"RBTC","amount":"10","frequency":"daily","fromToken":"rUSDT"},"confidence":0.98}
-- "quiero invertir 5 dolares en bitcoin cada semana" → {"action":"dca","params":{"token":"RBTC","amount":"5","frequency":"weekly","fromToken":"rUSDT"},"confidence":0.95}
+- "comprar 10 RBTC diario" → {"action":"dca","params":{"token":"RBTC","amount":"10","frequency":"daily","fromToken":"DOC"},"confidence":0.98}
+- "quiero invertir 5 dolares en bitcoin cada semana" → {"action":"dca","params":{"token":"RBTC","amount":"5","frequency":"weekly","fromToken":"DOC"},"confidence":0.95}
+- "invertir mis DOC" → {"action":"park","params":{},"confidence":0.97}
+- "parquear" → {"action":"park","params":{},"confidence":0.98}
 - "ver mi balance" → {"action":"balance","params":{},"confidence":0.99}
 - "pausar orden 3" → {"action":"pause","params":{"orderId":3},"confidence":0.97}
 - "hola" → {"action":"start","params":{},"confidence":0.85}
@@ -78,6 +81,10 @@ function tryLocalParse(text: string): ParsedIntent | null {
   if (/^(deposit|depositar|address|direccion|mi direccion|wallet address|mi wallet)$/i.test(t)) {
     return { action: 'deposit', params: {}, confidence: 1 };
   }
+  // Park / invertir DOC en yield (but NOT "invertir 5 DOC semanal" which is DCA)
+  if (/^(parquear|park)(\s.*)?$/i.test(t) || /^invertir(\s+(mis\s+)?doc)?$/i.test(t)) {
+    return { action: 'park', params: {}, confidence: 1 };
+  }
 
   // DCA: "comprar 10 RBTC diario" / "buy 10 RBTC daily" / "invertir 5 DOC semanal"
   const dcaMatch = t.match(
@@ -95,7 +102,7 @@ function tryLocalParse(text: string): ParsedIntent | null {
         amount: dcaMatch[1],
         token: dcaMatch[2].toUpperCase(),
         frequency: freq,
-        fromToken: 'RUSDT',
+        fromToken: 'DOC',
       },
       confidence: 0.95,
     };

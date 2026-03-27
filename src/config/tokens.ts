@@ -22,6 +22,10 @@ export const YIELD_CONTRACTS: Record<string, string> = {
   iDLLR: "0x077fcb01cab070a30bc14b44559c96f529ee017f",
 };
 
+export const IDLE_YIELD_CONTRACTS: Record<string, string> = {
+  kDOC: "0x544eb90e766b405134b3b3f62b6b4c23fcd5fda2",
+};
+
 export const TOKEN_DECIMALS: Record<string, number> = {
   WRBTC: 18,
   RUSDT: 18,
