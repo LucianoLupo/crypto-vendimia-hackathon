@@ -1,17 +1,26 @@
 # SatsPilot
 
-**Tu copiloto cripto en WhatsApp** — DCA automatizado en Bitcoin desde WhatsApp, con comandos por lenguaje natural y generación de yield automática en Rootstock.
+**Tu copiloto cripto en WhatsApp** — DCA automatizado en Bitcoin desde WhatsApp, con conversión DOC a RBTC sin slippage via Money on Chain y generación de yield automática en Rootstock.
 
 ## Qué Hace
 
-1. Mandas un mensaje de WhatsApp → "Quiero invertir 5 dolares en bitcoin cada semana"
+1. Mandás un mensaje de WhatsApp: "Quiero invertir 5 dólares en bitcoin cada semana"
 2. El bot parsea tu intención (regex local o Claude 3.5 Haiku via OpenRouter)
 3. Crea una orden DCA que se ejecuta automáticamente en tu frecuencia elegida
-4. Ejecuta swaps en Uniswap V3 desplegado en Rootstock
-5. Auto-deposita los tokens comprados en Sovryn lending para generar yield
+4. Convierte DOC a RBTC via Money on Chain (`redeemFreeDoc`) — precio oráculo, cero slippage
+5. Mientras los DOC esperan, generan ~5% anual en Tropykus kDOC
 6. Smart DCA: compra más cuando el precio baja, menos cuando sube
 
 Sin MetaMask. Sin wallet connect. Solo WhatsApp.
+
+## Componentes
+
+El proyecto tiene dos componentes principales:
+
+| Componente | Tecnología | Descripción |
+|------------|-----------|-------------|
+| **Smart Contract** | Solidity / Foundry | `SatsPilotDCA.sol` — contrato no custodial que gestiona depósitos, DCA schedules, yield y retiros on-chain |
+| **Backend** | Node.js / TypeScript / Express | Bot de WhatsApp que interactúa con el contrato como "keeper" — solo puede disparar ejecuciones programadas, no acceder a fondos |
 
 ## Arquitectura
 
@@ -22,41 +31,127 @@ Usuario WhatsApp
 Kapso.ai (WhatsApp Cloud API de Meta)
     │ Webhook POST con HMAC signature
     ▼
-SatsPilot Backend (Node.js / TypeScript / Express)
-    ├── Parser de intenciones (regex local + Claude 3.5 Haiku via OpenRouter)
-    ├── Router de comandos (start, dca, balance, status, ayuda...)
-    ├── Wallet Manager (derivación HD por usuario)
-    ├── Swap Executor (Uniswap V3 SwapRouter02 en Rootstock)
-    ├── Yield Depositor (Sovryn iToken lending)
-    ├── Idle Yield (Tropykus kDOC ~5% APY para DOC libres)
-    ├── Scheduler DCA (node-cron, cada minuto)
-    ├── Smart DCA (análisis precio vs SMA 7 días via CoinGecko)
-    └── Deposit Watcher (monitoreo de RBTC + rUSDT + DOC cada 60s)
+SatsPilot Backend (Node.js / TypeScript — rol de "keeper")
+    │ Parser de intenciones → Router de comandos → Llamadas al contrato
+    ▼
+SatsPilotDCA.sol (Smart Contract en Rootstock)
+    ├── Tropykus kDOC ──── DOC idle genera ~5% APY
+    ├── Money on Chain ─── redeemFreeDoc() para DOC → RBTC (oráculo, 0 slippage)
+    └── Sovryn iRBTC ───── RBTC acumulado genera yield en lending
         │
         ▼
     Rootstock Blockchain (EVM, asegurada por el hashrate de Bitcoin)
+```
+
+### Modelo de seguridad: keeper, no custodio
+
+En la arquitectura anterior, el servidor tenía acceso completo a las wallets de los usuarios (modelo custodial). Con el smart contract, el modelo cambió:
+
+- **El contrato `SatsPilotDCA` custodia los fondos** — los usuarios depositan DOC directamente en el contrato
+- **El servidor actúa como "keeper"** — solo puede llamar a `executeDca()` para disparar compras programadas
+- **El keeper NO puede retirar fondos** — solo los usuarios pueden retirar sus DOC y RBTC acumulado
+- **Los fondos no se mueven sin autorización del usuario** — depositar, retirar y cancelar son funciones que solo el usuario puede ejecutar
+
+## Smart Contract: SatsPilotDCA
+
+> **Estado: NO DESPLEGADO.** El contrato está escrito y listo para deploy pero aún NO está en mainnet de Rootstock. El deploy se hará una vez completada la integración con el backend.
+
+### Interfaz
+
+```solidity
+contract SatsPilotDCA {
+    struct Schedule {
+        uint256 docBalance;        // DOC depositado
+        uint256 purchaseAmount;    // DOC a gastar por ejecución
+        uint256 purchasePeriod;    // Segundos entre ejecuciones (mín. 1 día)
+        uint256 lastExecution;     // Timestamp de última ejecución
+        uint256 accumulatedRbtc;   // RBTC acumulado de las compras
+        bool active;
+    }
+
+    // --- Funciones del usuario ---
+    function createSchedule(uint256 depositAmount, uint256 purchaseAmount, uint256 purchasePeriod) external;
+    function depositMore(uint256 amount) external;
+    function withdrawDoc(uint256 amount) external;
+    function withdrawRbtc() external;
+    function cancelSchedule() external;
+    function updateSchedule(uint256 newPurchaseAmount, uint256 newPurchasePeriod) external;
+
+    // --- Funciones del keeper (solo el servidor) ---
+    function executeDca(address user) external;
+    function batchExecuteDca(address[] calldata users) external;
+
+    // --- Funciones de consulta ---
+    function getSchedule(address user) external view returns (Schedule memory);
+    function getDocBalance(address user) external view returns (uint256);
+    function getPendingRbtc(address user) external view returns (uint256);
+    function isDue(address user) external view returns (bool);
+    function getDueUsers() external view returns (address[] memory);
+}
+```
+
+### Cómo funciona la conversión DOC a RBTC
+
+DOC es la stablecoin nativa de Money on Chain, colateralizada por Bitcoin. En lugar de usar un DEX (con slippage y riesgo de MEV), el contrato usa `redeemFreeDoc()` para redimir DOC en el mercado primario:
+
+- **Precio oráculo**: Money on Chain usa su propio oráculo de BTC/USD — no hay slippage
+- **Comisión MoC**: ~0.15% por redención
+- **Comisión del protocolo SatsPilot**: 0.5% por ejecución DCA
+- **Sin dependencia de liquidez en pools**: la redención es directa contra las reservas de MoC
+
+### Flujo de ejecución DCA
+
+```
+executeDca(user):
+1. Verificar msg.sender == keeper
+2. Verificar schedule activo y período cumplido
+3. Redimir DOC de Tropykus kDOC → obtener DOC líquido
+4. Calcular fee del protocolo (0.5%)
+5. Llamar MoC.redeemFreeDoc(docAmount) → recibir RBTC nativo
+6. Acumular RBTC en el schedule del usuario
+7. Actualizar balance y timestamp
+8. Desactivar schedule si el balance es insuficiente para la próxima compra
+```
+
+### Contratos externos utilizados
+
+| Contrato | Dirección (RSK Mainnet) | Uso |
+|----------|------------------------|-----|
+| DOC (stablecoin) | `0xe700691dA7b9851F2F35f8b8182c69c53CcaD9Db` | Token fuente para DCA |
+| Tropykus kDOC | `0x544Eb90e766B405134b3B3F62b6b4C23Fcd5fDa2` | Yield para DOC idle (~5% APY) |
+| Money on Chain (MoC) | `0xf773B590aF754D597770937Fa8ea7AbDf2668370` | Redención DOC → RBTC (oráculo, 0 slippage) |
+
+### Build y test del contrato
+
+```bash
+cd contracts
+forge build
+forge test
 ```
 
 ## Features
 
 - **DCA por lenguaje natural** — "Comprar 5 RBTC diario", "Invertir 10 DOC semanal"
 - **Smart DCA** — Ajusta montos basándose en precio actual vs SMA de 7 días (CoinGecko)
-- **Auto-Yield** — Tokens comprados se depositan en Sovryn lending automáticamente
-- **Idle Yield** — DOC libres generan ~5% anual en Tropykus kDOC mientras esperan el próximo DCA
+- **Conversión sin slippage** — DOC → RBTC via Money on Chain `redeemFreeDoc()` a precio oráculo
+- **Idle Yield** — DOC depositados generan ~5% anual en Tropykus kDOC mientras esperan el próximo DCA
+- **No custodial** — Los fondos viven en el smart contract; el servidor solo dispara ejecuciones programadas
 - **Multi-Token** — RBTC, DOC, RIF, SOV, DLLR, rUSDT
-- **Wallet por usuario** — Derivación HD determinística desde un mnemónico maestro
 - **Gestión de órdenes** — Pausar, reanudar, cancelar órdenes DCA via WhatsApp
+- **Retiros** — Retirar DOC o RBTC acumulado a cualquier dirección externa
 - **Detección de depósitos** — Notifica via WhatsApp cuando se detectan nuevos fondos
 
 ## Tech Stack
 
 | Capa | Tecnología |
 |------|-----------|
+| Smart Contract | [Solidity](https://soliditylang.org) ^0.8.19 + [Foundry](https://getfoundry.sh) |
 | WhatsApp API | [Kapso.ai](https://kapso.ai) (wrapper oficial de Meta WhatsApp Cloud API) |
 | AI/NLP | Claude 3.5 Haiku via [OpenRouter](https://openrouter.ai) + regex local como fallback |
 | Blockchain | [Rootstock](https://rootstock.io) (sidechain EVM de Bitcoin) |
-| DEX | Uniswap V3 (SwapRouter02 desplegado en RSK) |
-| Yield | [Sovryn](https://sovryn.app) iToken lending + [Tropykus](https://tropykus.com) kDOC idle yield |
+| DOC → RBTC | [Money on Chain](https://moneyonchain.com) `redeemFreeDoc()` (oráculo, 0 slippage) |
+| Yield (DOC) | [Tropykus](https://tropykus.com) kDOC (~5% APY) |
+| Yield (RBTC) | [Sovryn](https://sovryn.app) iRBTC lending |
 | Backend | Node.js, TypeScript, Express |
 | Base de datos | SQLite via better-sqlite3 + Drizzle ORM |
 | Scheduling | node-cron (cada minuto) |
@@ -66,13 +161,15 @@ SatsPilot Backend (Node.js / TypeScript / Express)
 
 | Contrato | Dirección |
 |----------|-----------|
-| SwapRouter02 (Uniswap V3) | `0x0b14ff67f0014046b4b99057aec4509640b3947a` |
-| QuoterV2 (Uniswap V3) | `0xb51727c996c68e60f598a923a5006853cd2feb31` |
-| V3Factory (Uniswap V3) | `0xaf37ec98a00fd63689cf3060bf3b6784e00cad82` |
+| SatsPilotDCA | **No desplegado aún** |
+| Money on Chain (MoC) | `0xf773b590af754d597770937fa8ea7abdf2668370` |
+| Tropykus kDOC | `0x544eb90e766b405134b3b3f62b6b4c23fcd5fda2` |
 | Sovryn iRBTC | `0xa9dcdc63eabb8a2b6f39d7ff9429d88340044a7a` |
 | Sovryn iDOC | `0xd8d25f03ebba94e15df2ed4d6d38276b595593c1` |
 | Sovryn iDLLR | `0x077fcb01cab070a30bc14b44559c96f529ee017f` |
-| Tropykus kDOC | `0x544eb90e766b405134b3b3f62b6b4c23fcd5fda2` |
+| SwapRouter02 (Uniswap V3) | `0x0b14ff67f0014046b4b99057aec4509640b3947a` |
+| QuoterV2 (Uniswap V3) | `0xb51727c996c68e60f598a923a5006853cd2feb31` |
+| V3Factory (Uniswap V3) | `0xaf37ec98a00fd63689cf3060bf3b6784e00cad82` |
 | WRBTC | `0x542fda317318ebf1d3deaf76e0b632741a7e677d` |
 | rUSDT | `0xef213441a85df4d7acbdae0cf78004e1e486bb96` |
 | DOC | `0xe700691da7b9851f2f35f8b8182c69c53ccad9db` |
@@ -81,20 +178,32 @@ Todas las direcciones están en lowercase para evitar problemas con el checksum 
 
 ## Seguridad y Modelo de Confianza
 
-### Modelo custodial
+### Modelo no custodial (smart contract)
 
-SatsPilot es **custodial** — el servidor tiene el mnemónico maestro desde el cual se derivan todas las wallets de los usuarios. Esto significa:
+Con `SatsPilotDCA.sol`, los fondos de los usuarios viven en el contrato, no en wallets controladas por el servidor:
 
-- **El operador del bot tiene acceso completo** a todos los fondos de todos los usuarios
-- **Si el servidor o las variables de entorno se comprometen**, todas las wallets están en riesgo
-- Para un hackathon esto es aceptable con montos pequeños; para producción se debería migrar a smart contract vaults o account abstraction
+- **El keeper (servidor) solo puede disparar `executeDca()`** — no puede retirar fondos ni modificar schedules de los usuarios
+- **Los usuarios retiran sus fondos directamente** llamando `withdrawDoc()`, `withdrawRbtc()` o `cancelSchedule()`
+- **El contrato es inmutable una vez desplegado** — las reglas de ejecución están en código, no en el servidor
 
-### Aislamiento entre usuarios
+> **Importante: el contrato NO ha sido auditado.** Es código de hackathon. No depositar fondos significativos sin una auditoría profesional.
+
+### Riesgos del contrato
+
+- **Sin auditoría** — el contrato no fue revisado por auditores de seguridad
+- **Dependencia de protocolos externos** — los fondos en Tropykus kDOC y Money on Chain están sujetos al riesgo de smart contract de esos protocolos
+- **Keeper centralizado** — si el servidor deja de funcionar, las ejecuciones DCA se pausan (pero los fondos siguen accesibles para retiro)
+- **Sin proxy/upgradeability** — si se encuentra un bug, se necesita migrar a un nuevo contrato
+- **Fee del protocolo** — 0.5% por ejecución DCA, configurable solo por el owner
+
+### Componente backend (aún parcialmente custodial)
+
+El backend todavía gestiona wallets derivadas HD para funciones como retiros y balances. Esta capa se irá migrando al contrato progresivamente:
 
 - Cada usuario se identifica por su número de WhatsApp (`from` field del webhook de Kapso)
 - Kapso/Meta garantizan la autenticidad del número — no se puede spoofear
-- Todas las queries a la DB filtran por `user_id` — un usuario no puede ver ni operar las ordenes de otro
-- Las wallets se derivan determinísticamente: `m/44'/137'/0'/0/{userIndex}` — cada usuario tiene su propia wallet
+- Todas las queries a la DB filtran por `user_id` — un usuario no puede ver ni operar las órdenes de otro
+- Las wallets se derivan determinísticamente: `m/44'/137'/0'/0/{userIndex}`
 
 ### Rol del modelo de IA (Claude 3.5 Haiku)
 
@@ -105,21 +214,22 @@ El LLM funciona **únicamente como clasificador de intenciones**:
 - **No puede inyectar direcciones** — los tokens se resuelven contra una whitelist hardcodeada en `tokens.ts`
 - **No puede ejecutar operaciones** — solo clasifica la intención; el backend valida todo antes de ejecutar
 - Si el LLM devuelve un token no soportado, la validación en `commands.ts` lo rechaza
-- Los comandos comunes (ayuda, balance, estado, DCA con patron simple) se parsean localmente con regex, sin llamar al LLM
+- Los comandos comunes (ayuda, balance, estado, DCA con patrón simple) se parsean localmente con regex, sin llamar al LLM
 
 ### Validaciones del backend
 
 - Montos validados: positivos, no mayores a 10,000 por ejecución
 - Tokens validados contra whitelist (RBTC, DOC, RIF, SOV, DLLR, RUSDT)
 - Frecuencias validadas: solo hourly, daily, weekly
-- Approvals de tokens: monto exacto (no MaxUint256)
-- Swaps con deadline de 5 minutos (protección contra MEV)
-- Slippage: 1% por defecto
+- Monto mínimo de DCA en el contrato: 25 DOC por ejecución
+- Período mínimo en el contrato: 1 día
 - Guard de concurrencia en el scheduler (evita ejecuciones dobles)
 - Null checks en `tx.wait()` (ethers v6 puede devolver null si la tx se dropea)
 
 ### Qué NO se implementó (limitaciones del hackathon)
 
+- El contrato SatsPilotDCA no está desplegado en mainnet
+- No hay auditoría del smart contract
 - No hay encriptación del mnemónico en reposo (se lee directo del env var)
 - No hay rate limiting en el webhook (cada request no autenticado igual se procesa)
 - No hay validación de formato del número de teléfono
@@ -127,7 +237,6 @@ El LLM funciona **únicamente como clasificador de intenciones**:
 - No hay replay protection en webhooks (se verifica HMAC pero no se trackean message IDs)
 - Los errores de ethers.js se loguean completos (podrían filtrar info sensible)
 - SQLite en Railway es efímero — los datos se pierden en cada redeploy. Para producción: usar Railway Volumes o migrar a PostgreSQL.
-- Los fondos en Tropykus kDOC y Sovryn iTokens están sujetos al riesgo de smart contract de esos protocolos.
 - No hay comando de retiro automático de fondos de yield pools en caso de emergencia del protocolo.
 
 ## Setup
@@ -135,6 +244,7 @@ El LLM funciona **únicamente como clasificador de intenciones**:
 ### Prerequisitos
 
 - Node.js 20+
+- [Foundry](https://getfoundry.sh) (para compilar y testear el smart contract)
 - Cuenta en [Kapso.ai](https://kapso.ai) (tier gratis — 2,000 msgs/mes)
 - API key de [OpenRouter](https://openrouter.ai) (opcional — regex local cubre comandos básicos)
 - Cuenta en [Railway](https://railway.app) (para deploy)
@@ -145,6 +255,10 @@ El LLM funciona **únicamente como clasificador de intenciones**:
 git clone https://github.com/LucianoLupo/crypto-vendimia-hackathon.git
 cd crypto-vendimia-hackathon
 npm install
+
+# Compilar el smart contract
+cd contracts
+forge build
 ```
 
 ### Variables de Entorno
@@ -195,7 +309,7 @@ El bot acepta comandos en español e inglés:
 | **Empezar** | "hola", "start", "buenas" |
 | **DCA** | "comprar 10 RBTC diario", "invertir 5 DOC semanal" |
 | **Balance** | "saldo", "balance", "ver mi balance" |
-| **Estado** | "estado", "mis ordenes", "status" |
+| **Estado** | "estado", "mis órdenes", "status" |
 | **Pausar** | "pausar orden #3", "pausar" |
 | **Reanudar** | "reanudar", "continuar" |
 | **Cancelar** | "cancelar orden #2", "cancelar" |
@@ -204,7 +318,7 @@ El bot acepta comandos en español e inglés:
 | **Retirar** | "retirar 0.5 RBTC a 0x...", "withdraw 10 DOC to 0x..." |
 | **Ayuda** | "ayuda", "help", "comandos" |
 
-## Como Funciona el DCA + Yield
+## Cómo Funciona el DCA + Yield
 
 ```
 Usuario configura: "Comprar 10 RBTC diario" (default: DOC como token fuente)
@@ -218,16 +332,11 @@ Usuario configura: "Comprar 10 RBTC diario" (default: DOC como token fuente)
     │   ├── Precio 5%+ arriba del SMA → compra 5 DOC (50% menos)
     │   └── Rango normal → compra 10 DOC (monto base)
     │
-    ├── Ejecuta swap en Uniswap V3 (DOC → WRBTC via SwapRouter02)
-    │   ├── Obtiene quote via QuoterV2
-    │   ├── Aplica 1% slippage tolerance
-    │   ├── Approve del monto exacto al router
-    │   └── exactInputSingle con deadline de 5 minutos
-    │
-    ├── Auto-deposita RBTC en Sovryn iRBTC (si autoYield está activado)
-    │   └── Llama iToken.mint() con el monto recibido del swap
-    │
-    ├── Idle Yield: re-deposita DOC restante en Tropykus kDOC (si > 100 DOC)
+    ├── Keeper llama executeDca() en SatsPilotDCA.sol
+    │   ├── Redime DOC de Tropykus kDOC
+    │   ├── Cobra 0.5% fee del protocolo
+    │   ├── Llama MoC.redeemFreeDoc() → recibe RBTC nativo (precio oráculo, 0 slippage)
+    │   └── Acumula RBTC en el schedule del usuario
     │
     ├── Registra ejecución en DB (tx hashes, montos, estado)
     │
@@ -237,27 +346,34 @@ Usuario configura: "Comprar 10 RBTC diario" (default: DOC como token fuente)
 ## Estructura del Proyecto
 
 ```
-src/
-├── index.ts                  # Entry point: Express + scheduler + deposit watcher
-├── config/
-│   ├── env.ts                # Validación de env vars con Zod (falla al iniciar si faltan)
-│   └── tokens.ts             # Direcciones de tokens y contratos en RSK (hardcoded)
-├── db/
-│   ├── schema.ts             # Drizzle schema: users, dca_orders, executions
-│   └── index.ts              # Conexión SQLite + funciones de query
-├── routes/
-│   └── webhook.ts            # Handler de webhook de Kapso (parsea payload batched)
-└── services/
-    ├── parser.ts             # Clasificador de intenciones: regex local → OpenRouter fallback
-    ├── commands.ts           # Router de comandos: despacha a handlers por acción
-    ├── wallet.ts             # Derivación HD (m/44'/137'/0'/0/{n}), balances on-chain
-    ├── swap.ts               # Swaps Uniswap V3: quote, approve, exactInputSingle
-    ├── yield.ts              # Depósitos Sovryn: iToken.mint/burn, balance checking
-    ├── idle-yield.ts         # Tropykus kDOC: park/unpark DOC libres para generar yield
-    ├── scheduler.ts          # Cron cada minuto: busca órdenes vencidas, ejecuta swap+yield
-    ├── smart-dca.ts          # Precio vs SMA 7 días (CoinGecko), ajusta monto ±50%
-    ├── deposit-watcher.ts    # Polling cada 60s: detecta nuevos depósitos RBTC + rUSDT + DOC
-    └── whatsapp.ts           # Envío de mensajes via Kapso REST API
+├── contracts/                    # Smart contract (Foundry)
+│   ├── src/
+│   │   └── SatsPilotDCA.sol      # Contrato principal: DCA no custodial
+│   ├── test/                     # Tests del contrato
+│   ├── script/                   # Scripts de deploy
+│   └── foundry.toml              # Configuración de Foundry
+│
+└── src/                          # Backend (Node.js / TypeScript)
+    ├── index.ts                  # Entry point: Express + scheduler + deposit watcher
+    ├── config/
+    │   ├── env.ts                # Validación de env vars con Zod
+    │   └── tokens.ts             # Direcciones de tokens y contratos en RSK
+    ├── db/
+    │   ├── schema.ts             # Drizzle schema: users, dca_orders, executions
+    │   └── index.ts              # Conexión SQLite + funciones de query
+    ├── routes/
+    │   └── webhook.ts            # Handler de webhook de Kapso
+    └── services/
+        ├── parser.ts             # Clasificador de intenciones: regex local → OpenRouter fallback
+        ├── commands.ts           # Router de comandos: despacha a handlers por acción
+        ├── wallet.ts             # Derivación HD, balances on-chain
+        ├── swap.ts               # Swaps Uniswap V3 (legacy, siendo reemplazado por MoC)
+        ├── yield.ts              # Depósitos Sovryn: iToken.mint/burn
+        ├── idle-yield.ts         # Tropykus kDOC: park/unpark DOC libres
+        ├── scheduler.ts          # Cron cada minuto: busca órdenes vencidas, ejecuta DCA
+        ├── smart-dca.ts          # Precio vs SMA 7 días (CoinGecko), ajusta monto ±50%
+        ├── deposit-watcher.ts    # Polling cada 60s: detecta nuevos depósitos
+        └── whatsapp.ts           # Envío de mensajes via Kapso REST API
 ```
 
 ## Built For
