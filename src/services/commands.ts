@@ -19,8 +19,9 @@ import type { ParsedIntent } from './parser';
 import { TOKEN_ADDRESSES, TOKEN_DECIMALS, ERC20_ABI, tokenBySymbol } from '../config/tokens';
 import { ORDER_STATUS, EXEC_STATUS } from '../config/constants';
 import { EXPLORER_URL } from '../config/env';
-import { getQuote } from './swap';
-import { getSupportedYieldTokens } from './yield';
+import { getQuote, executeSwap } from './swap';
+import { getSupportedYieldTokens, depositToYield } from './yield';
+import { logExecution } from '../db';
 import { parkIdleFunds, getIdleYieldBalance } from './idle-yield';
 import { calcNextExecution } from '../utils/time';
 
@@ -131,23 +132,54 @@ async function handleDca(
     nextExecution,
   });
 
-  let quoteInfo = '';
-  try {
-    const quote = await getQuote(fromToken, normalizedToken, params.amount);
-    quoteInfo = `\nCotización actual: ${params.amount} ${fromToken} ≈ ${quote} ${normalizedToken}`;
-  } catch {
-    quoteInfo = '\n(Cotización no disponible — se ejecutará a precio de mercado)';
-  }
-
   const yieldTokens = getSupportedYieldTokens();
   const yieldNote = yieldTokens.includes(normalizedToken)
     ? ''
-    : `\n\n⚠️ Nota: auto-yield no está disponible para ${normalizedToken}. Los tokens se acumularán en tu wallet.`;
+    : `\n⚠️ Auto-yield no disponible para ${normalizedToken}.`;
 
   await sendMessage(
     whatsappId,
-    `📊 Orden DCA creada!\n\n*Comprar ${params.amount} ${fromToken} → ${normalizedToken}*\nFrecuencia: ${FREQ_LABELS[params.frequency] ?? params.frequency}\nPróxima ejecución: ${formatDate(nextExecution)}\nOrden #${order.id}${quoteInfo}${yieldNote}\n\nEscribí *estado* para ver tus órdenes.`
+    `📊 Orden DCA creada!\n\n*Comprar ${params.amount} ${fromToken} → ${normalizedToken}*\nFrecuencia: ${FREQ_LABELS[params.frequency] ?? params.frequency}\nOrden #${order.id}${yieldNote}\n\n🔄 Ejecutando primera compra ahora...`
   );
+
+  // Execute first buy immediately
+  try {
+    const wallet = getUserWallet(user.walletIndex);
+    const swapResult = await executeSwap(wallet, fromToken, normalizedToken, params.amount);
+
+    let yieldInfo = '';
+    if (yieldTokens.includes(normalizedToken)) {
+      try {
+        const yieldResult = await depositToYield(wallet, normalizedToken, swapResult.amountOut);
+        yieldInfo = `\n📈 Yield: depositado en Sovryn (${yieldResult.iTokensReceived} i${normalizedToken})`;
+      } catch {
+        yieldInfo = `\n⚠️ Yield no disponible, tokens en tu wallet.`;
+      }
+    }
+
+    logExecution({
+      dcaOrderId: order.id,
+      userId: user.id,
+      swapTxHash: swapResult.txHash,
+      yieldTxHash: null,
+      amountIn: params.amount,
+      amountOut: swapResult.amountOut,
+      yieldTokensReceived: null,
+      status: EXEC_STATUS.COMPLETED,
+      error: null,
+    });
+
+    await sendMessage(
+      whatsappId,
+      `✅ Primera compra ejecutada!\n\n${params.amount} ${fromToken} → ${swapResult.amountOut} ${normalizedToken}\nTx: ${EXPLORER_URL}/tx/${swapResult.txHash}${yieldInfo}\n\nPróxima ejecución: ${formatDate(nextExecution)}`
+    );
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    await sendMessage(
+      whatsappId,
+      `⚠️ La orden fue creada pero la primera compra falló:\n${errorMsg}\n\nLa próxima ejecución será: ${formatDate(nextExecution)}`
+    );
+  }
 }
 
 async function handleBalance(whatsappId: string, user: User): Promise<void> {
