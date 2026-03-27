@@ -60,12 +60,12 @@ contract SatsPilotDCA {
     uint256 public constant FEE_BPS = 50; // 0.5% protocol fee
     uint256 public feeAccumulated;
 
-    // ======================== RSK MAINNET ADDRESSES ========================
+    // ======================== PROTOCOL ADDRESSES (immutable, set at deploy) ========================
 
-    IERC20 public constant DOC = IERC20(0xe700691dA7b9851F2F35f8b8182c69c53CcaD9Db);
-    ICToken public constant KDOC = ICToken(0x544Eb90e766B405134b3B3F62b6b4C23Fcd5fDa2);
-    IMoC public constant MOC = IMoC(0xf773B590aF754D597770937Fa8ea7AbDf2668370);
-    ICRbtc public constant KRBTC = ICRbtc(0x0AEAdb9d4C6A80462A47e87E76E487Fa8B9a37d7);
+    IERC20 public immutable DOC;
+    ICToken public immutable KDOC;
+    IMoC public immutable MOC;
+    ICRbtc public immutable KRBTC;
 
     // ======================== EVENTS ========================
 
@@ -101,9 +101,19 @@ contract SatsPilotDCA {
 
     // ======================== CONSTRUCTOR ========================
 
-    constructor(address _keeper) {
+    constructor(
+        address _keeper,
+        address _doc,
+        address _moc,
+        address _kdoc,
+        address _krbtc
+    ) {
         owner = msg.sender;
         keeper = _keeper;
+        DOC = IERC20(_doc);
+        MOC = IMoC(_moc);
+        KDOC = ICToken(_kdoc);
+        KRBTC = ICRbtc(_krbtc);
     }
 
     // ======================== USER FUNCTIONS ========================
