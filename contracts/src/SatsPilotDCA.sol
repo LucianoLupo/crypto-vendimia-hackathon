@@ -20,9 +20,17 @@ interface IMoC {
     function redeemFreeDoc(uint256 docAmount) external;
 }
 
+interface ICRbtc {
+    function mint() external payable returns (uint256);
+    function redeem(uint256 redeemTokens) external returns (uint256);
+    function balanceOf(address owner) external view returns (uint256);
+    function exchangeRateStored() external view returns (uint256);
+}
+
 /// @title SatsPilotDCA — Non-custodial DCA on Rootstock
 /// @notice Users deposit DOC, configure DCA schedules. A keeper triggers periodic
 ///         DOC → RBTC conversions via Money on Chain. Idle DOC earns yield in Tropykus kDOC.
+///         Accumulated RBTC earns yield in Tropykus kRBTC.
 /// @dev DOC redemption uses MoC's redeemFreeDoc (zero slippage, oracle price, 0.15% fee).
 ///      No Uniswap needed — DOC is MoC's native stablecoin, so redemption is primary market.
 contract SatsPilotDCA {
@@ -57,6 +65,7 @@ contract SatsPilotDCA {
     IERC20 public constant DOC = IERC20(0xe700691dA7b9851F2F35f8b8182c69c53CcaD9Db);
     ICToken public constant KDOC = ICToken(0x544Eb90e766B405134b3B3F62b6b4C23Fcd5fDa2);
     IMoC public constant MOC = IMoC(0xf773B590aF754D597770937Fa8ea7AbDf2668370);
+    ICRbtc public constant KRBTC = ICRbtc(0x0AEAdb9d4C6A80462A47e87E76E487Fa8B9a37d7);
 
     // ======================== EVENTS ========================
 
@@ -167,13 +176,17 @@ contract SatsPilotDCA {
         emit DocWithdrawn(msg.sender, amount);
     }
 
-    /// @notice Withdraw accumulated RBTC from DCA purchases
+    /// @notice Withdraw accumulated RBTC from DCA purchases (redeems from Tropykus kRBTC)
     function withdrawRbtc() external nonReentrant {
         Schedule storage s = schedules[msg.sender];
         uint256 amount = s.accumulatedRbtc;
         require(amount > 0, "No RBTC to withdraw");
 
         s.accumulatedRbtc = 0;
+
+        // Redeem RBTC from Tropykus kRBTC (user gets their RBTC + any yield earned)
+        _redeemRbtcFromKrbtc(amount);
+
         (bool sent, ) = msg.sender.call{value: amount}("");
         require(sent, "RBTC transfer failed");
 
@@ -197,6 +210,7 @@ contract SatsPilotDCA {
             require(DOC.transfer(msg.sender, docAmount), "DOC refund failed");
         }
         if (rbtcAmount > 0) {
+            _redeemRbtcFromKrbtc(rbtcAmount);
             (bool sent, ) = msg.sender.call{value: rbtcAmount}("");
             require(sent, "RBTC refund failed");
         }
@@ -267,7 +281,10 @@ contract SatsPilotDCA {
         uint256 docActuallyBurned = docBefore - docAfter;
         require(rbtcReceived > 0, "MoC redemption returned 0");
 
-        // 4. Update schedule — only deduct what was actually burned + fee
+        // 4. Deposit RBTC into Tropykus kRBTC for yield
+        KRBTC.mint{value: rbtcReceived}();
+
+        // 5. Update schedule — only deduct what was actually burned + fee
         uint256 totalDeducted = docActuallyBurned + fee;
         s.docBalance -= totalDeducted;
         s.accumulatedRbtc += rbtcReceived;
@@ -296,6 +313,21 @@ contract SatsPilotDCA {
     function _redeemFromKdoc(uint256 amount) internal {
         uint256 result = KDOC.redeemUnderlying(amount);
         require(result == 0, "kDOC redeem failed");
+    }
+
+    function _redeemRbtcFromKrbtc(uint256 rbtcAmount) internal {
+        // Calculate kRBTC tokens needed to redeem `rbtcAmount` of native RBTC
+        // kRBTC uses exchangeRate: underlyingAmount = kTokens * exchangeRate / 1e18
+        // So kTokens = underlyingAmount * 1e18 / exchangeRate
+        uint256 exchangeRate = KRBTC.exchangeRateStored();
+        uint256 kRbtcNeeded = (rbtcAmount * 1e18 + exchangeRate - 1) / exchangeRate; // round up
+        uint256 kRbtcBalance = KRBTC.balanceOf(address(this));
+        // Redeem all if balance is close (avoid dust)
+        uint256 toRedeem = kRbtcNeeded > kRbtcBalance ? kRbtcBalance : kRbtcNeeded;
+        if (toRedeem > 0) {
+            uint256 result = KRBTC.redeem(toRedeem);
+            require(result == 0, "kRBTC redeem failed");
+        }
     }
 
     // ======================== ADMIN ========================
@@ -368,8 +400,11 @@ contract SatsPilotDCA {
 
     // ======================== RECEIVE ========================
 
-    /// @notice Accept native RBTC only from MoC redemption
+    /// @notice Accept native RBTC from MoC redemption and kRBTC withdrawal
     receive() external payable {
-        require(msg.sender == address(MOC) || msg.sender == address(this), "Only MoC");
+        require(
+            msg.sender == address(MOC) || msg.sender == address(KRBTC) || msg.sender == address(this),
+            "Only MoC/kRBTC"
+        );
     }
 }

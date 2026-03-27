@@ -37,7 +37,7 @@ SatsPilot Backend (Node.js / TypeScript — rol de "keeper")
 SatsPilotDCA.sol (Smart Contract en Rootstock)
     ├── Tropykus kDOC ──── DOC idle genera ~5% APY
     ├── Money on Chain ─── redeemFreeDoc() para DOC → RBTC (oráculo, 0 slippage)
-    └── Sovryn iRBTC ───── RBTC acumulado genera yield en lending
+    └── Tropykus kRBTC ─── RBTC acumulado genera yield en lending
         │
         ▼
     Rootstock Blockchain (EVM, asegurada por el hashrate de Bitcoin)
@@ -108,7 +108,8 @@ executeDca(user):
 3. Redimir DOC de Tropykus kDOC → obtener DOC líquido
 4. Calcular fee del protocolo (0.5%)
 5. Llamar MoC.redeemFreeDoc(docAmount) → recibir RBTC nativo
-6. Acumular RBTC en el schedule del usuario
+6. Depositar RBTC en Tropykus kRBTC (genera yield mientras el usuario no retira)
+7. Acumular RBTC en el schedule del usuario
 7. Actualizar balance y timestamp
 8. Desactivar schedule si el balance es insuficiente para la próxima compra
 ```
@@ -120,6 +121,7 @@ executeDca(user):
 | DOC (stablecoin) | `0xe700691dA7b9851F2F35f8b8182c69c53CcaD9Db` | Token fuente para DCA |
 | Tropykus kDOC | `0x544Eb90e766B405134b3B3F62b6b4C23Fcd5fDa2` | Yield para DOC idle (~5% APY) |
 | Money on Chain (MoC) | `0xf773B590aF754D597770937Fa8ea7AbDf2668370` | Redención DOC → RBTC (oráculo, 0 slippage) |
+| Tropykus kRBTC | `0x0AEAdb9d4C6A80462A47e87E76E487Fa8B9a37d7` | Yield para RBTC acumulado |
 
 ### Build y test del contrato
 
@@ -151,7 +153,7 @@ forge test
 | Blockchain | [Rootstock](https://rootstock.io) (sidechain EVM de Bitcoin) |
 | DOC → RBTC | [Money on Chain](https://moneyonchain.com) `redeemFreeDoc()` (oráculo, 0 slippage) |
 | Yield (DOC) | [Tropykus](https://tropykus.com) kDOC (~5% APY) |
-| Yield (RBTC) | [Sovryn](https://sovryn.app) iRBTC lending |
+| Yield (RBTC) | [Tropykus](https://tropykus.com) kRBTC lending |
 | Backend | Node.js, TypeScript, Express |
 | Base de datos | SQLite via better-sqlite3 + Drizzle ORM |
 | Scheduling | node-cron (cada minuto) |
@@ -164,7 +166,7 @@ forge test
 | SatsPilotDCA | **No desplegado aún** |
 | Money on Chain (MoC) | `0xf773b590af754d597770937fa8ea7abdf2668370` |
 | Tropykus kDOC | `0x544eb90e766b405134b3b3f62b6b4c23fcd5fda2` |
-| Sovryn iRBTC | `0xa9dcdc63eabb8a2b6f39d7ff9429d88340044a7a` |
+| Tropykus kRBTC | `0x0aeadb9d4c6a80462a47e87e76e487fa8b9a37d7` |
 | Sovryn iDOC | `0xd8d25f03ebba94e15df2ed4d6d38276b595593c1` |
 | Sovryn iDLLR | `0x077fcb01cab070a30bc14b44559c96f529ee017f` |
 | SwapRouter02 (Uniswap V3) | `0x0b14ff67f0014046b4b99057aec4509640b3947a` |
