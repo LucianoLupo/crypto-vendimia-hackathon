@@ -156,13 +156,24 @@ async function handleBalance(whatsappId: string, user: User): Promise<void> {
     return;
   }
 
-  const [rbtcBalance, rusdtBalance, docBalance, rifBalance, idleYield] = await Promise.all([
+  // Fetch balances — only query tokens that exist on the current network
+  const balancePromises: Promise<string>[] = [
     getWalletBalance(user.walletAddress),
-    getTokenBalance(user.walletAddress, TOKEN_ADDRESSES.RUSDT),
-    getTokenBalance(user.walletAddress, TOKEN_ADDRESSES.DOC),
-    getTokenBalance(user.walletAddress, TOKEN_ADDRESSES.RIF),
-    getIdleYieldBalance(user.walletAddress),
-  ]);
+  ];
+  const docAddr = TOKEN_ADDRESSES.DOC;
+  const rifAddr = TOKEN_ADDRESSES.RIF;
+  const rusdtAddr = TOKEN_ADDRESSES.RUSDT;
+
+  balancePromises.push(docAddr ? getTokenBalance(user.walletAddress, docAddr) : Promise.resolve('0'));
+  balancePromises.push(rifAddr ? getTokenBalance(user.walletAddress, rifAddr) : Promise.resolve('0'));
+  balancePromises.push(rusdtAddr ? getTokenBalance(user.walletAddress, rusdtAddr) : Promise.resolve('0'));
+
+  let idleYield = { docValue: '0' };
+  try {
+    idleYield = await getIdleYieldBalance(user.walletAddress);
+  } catch { /* kDOC may not be available */ }
+
+  const [rbtcBalance, docBalance, rifBalance, rusdtBalance] = await Promise.all(balancePromises);
 
   const idleDocValue = parseFloat(idleYield.docValue);
   const freeDoc = parseFloat(docBalance);
@@ -171,16 +182,19 @@ async function handleBalance(whatsappId: string, user: User): Promise<void> {
     ? `DOC: ${totalDoc.toFixed(2)} (generando ~5% anual en Tropykus)`
     : `DOC: ${freeDoc.toFixed(2)}`;
 
-  await sendMessage(
-    whatsappId,
+  let balanceText =
     `💰 *Balance de tu Wallet*\n\n` +
-      `Dirección: ${user.walletAddress}\n` +
-      `🔗 ${EXPLORER_URL}/address/${user.walletAddress}\n\n` +
-      `RBTC: ${parseFloat(rbtcBalance).toFixed(8)}\n` +
-      `rUSDT: ${parseFloat(rusdtBalance).toFixed(2)}\n` +
-      `${docLine}\n` +
-      `RIF: ${parseFloat(rifBalance).toFixed(4)}`
-  );
+    `Dirección: ${user.walletAddress}\n` +
+    `🔗 ${EXPLORER_URL}/address/${user.walletAddress}\n\n` +
+    `RBTC: ${parseFloat(rbtcBalance).toFixed(8)}\n` +
+    `${docLine}\n` +
+    `RIF: ${parseFloat(rifBalance).toFixed(4)}`;
+
+  if (rusdtAddr) {
+    balanceText += `\nrUSDT: ${parseFloat(rusdtBalance).toFixed(2)}`;
+  }
+
+  await sendMessage(whatsappId, balanceText);
 }
 
 async function handleStatus(whatsappId: string, user: User): Promise<void> {
