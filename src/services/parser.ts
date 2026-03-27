@@ -17,7 +17,7 @@ const SYSTEM_PROMPT = `Sos un parser de intenciones para SatsPilot, un bot de Wh
 
 El usuario habla en español (argentino). Parseá el mensaje y respondé ÚNICAMENTE con un JSON válido — sin markdown, sin explicación, sin texto extra.
 
-Tokens soportados: RBTC, DOC, RIF, rUSDT, SOV, DLLR, USDC
+Tokens soportados: RBTC, DOC, RIF, rUSDT, SOV, DLLR
 Token fuente por defecto para DCA: DOC
 Frecuencias soportadas: hourly (cada hora), daily (diario), weekly (semanal)
 

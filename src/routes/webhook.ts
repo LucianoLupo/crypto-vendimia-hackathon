@@ -52,12 +52,16 @@ router.post(
 
     console.log('[webhook] Received event:', req.headers['x-webhook-event']);
 
-    // Verify signature if present
-    if (signature && typeof signature === "string") {
-      if (!verifyHmacSignature(rawBody, signature)) {
-        console.warn('[webhook] Signature mismatch — rejecting request');
-        return res.status(401).json({ error: "Invalid signature" });
-      }
+    // Verify signature — MANDATORY
+    if (!signature || typeof signature !== "string") {
+      console.warn('[webhook] Missing signature header — rejecting request');
+      res.status(401).json({ error: "Missing X-Webhook-Signature" });
+      return;
+    }
+    if (!verifyHmacSignature(rawBody, signature)) {
+      console.warn('[webhook] Signature mismatch — rejecting request');
+      res.status(401).json({ error: "Invalid signature" });
+      return;
     }
 
     let payload: KapsoWebhookPayload;

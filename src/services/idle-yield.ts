@@ -25,9 +25,13 @@ export async function parkIdleFunds(
     const doc = new Contract(TOKEN_ADDRESSES.DOC, ERC20_ABI, wallet);
     const kDocAddress = IDLE_YIELD_CONTRACTS.kDOC;
 
-    const approveTx = await doc.approve(kDocAddress, parsedAmount);
-    const approveReceipt = await approveTx.wait();
-    if (!approveReceipt) throw new Error('Approve transaction dropped');
+    // Only approve if allowance is insufficient
+    const currentAllowance: bigint = await doc.allowance(wallet.address, kDocAddress);
+    if (currentAllowance < parsedAmount) {
+      const approveTx = await doc.approve(kDocAddress, parsedAmount);
+      const approveReceipt = await approveTx.wait();
+      if (!approveReceipt) throw new Error('Approve transaction dropped');
+    }
 
     const kDoc = new Contract(kDocAddress, KDOC_ABI, wallet);
     const tx = await kDoc.mint(parsedAmount);

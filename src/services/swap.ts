@@ -158,9 +158,22 @@ export async function executeSwap(
     if (!receipt) throw new Error(`Swap transaction ${tx.hash} was dropped or replaced`);
     console.log(`Swap confirmed in block ${receipt.blockNumber}`);
 
-    // Measure actual output from ERC20 balance diff (works for both WRBTC and other tokens)
+    // Measure actual output from ERC20 balance diff
     const postBalance: bigint = await balanceToken.balanceOf(wallet.address);
     const actualOut = postBalance - preBalance;
+
+    // If output is RBTC, unwrap WRBTC → native RBTC (needed for Sovryn iRBTC yield)
+    const isRbtcOut = tokenOutSymbol.toUpperCase() === 'RBTC';
+    if (isRbtcOut && actualOut > 0n) {
+      const wrbtc = new Contract(TOKEN_ADDRESSES.WRBTC, [
+        'function withdraw(uint256 wad) external',
+      ], wallet);
+      const unwrapTx = await wrbtc.withdraw(actualOut);
+      const unwrapReceipt = await unwrapTx.wait();
+      if (!unwrapReceipt) throw new Error('WRBTC unwrap transaction dropped');
+      console.log(`Unwrapped ${formatUnits(actualOut, decimalsOut)} WRBTC → native RBTC`);
+    }
+
     const amountOutFormatted = formatUnits(actualOut > 0n ? actualOut : amountOutMinimum, decimalsOut);
 
     return { txHash: tx.hash, amountOut: amountOutFormatted };

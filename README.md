@@ -43,7 +43,7 @@ SatsPilot Backend (Node.js / TypeScript / Express)
 - **Smart DCA** — Ajusta montos basandose en precio actual vs SMA de 7 dias (CoinGecko)
 - **Auto-Yield** — Tokens comprados se depositan en Sovryn lending automaticamente
 - **Idle Yield** — DOC libres generan ~5% anual en Tropykus kDOC mientras esperan el proximo DCA
-- **Multi-Token** — RBTC, DOC, RIF, SOV, DLLR, rUSDT, USDC
+- **Multi-Token** — RBTC, DOC, RIF, SOV, DLLR, rUSDT
 - **Wallet por usuario** — Derivacion HD deterministica desde un mnemonic maestro
 - **Gestion de ordenes** — Pausar, reanudar, cancelar ordenes DCA via WhatsApp
 - **Deteccion de depositos** — Notifica via WhatsApp cuando se detectan nuevos fondos
@@ -110,7 +110,7 @@ El LLM funciona **unicamente como clasificador de intenciones**:
 ### Validaciones del backend
 
 - Montos validados: positivos, no mayores a 10,000 por ejecucion
-- Tokens validados contra whitelist (RBTC, DOC, RIF, SOV, DLLR, RUSDT, USDC)
+- Tokens validados contra whitelist (RBTC, DOC, RIF, SOV, DLLR, RUSDT)
 - Frecuencias validadas: solo hourly, daily, weekly
 - Approvals de tokens: monto exacto (no MaxUint256)
 - Swaps con deadline de 5 minutos (proteccion contra MEV)

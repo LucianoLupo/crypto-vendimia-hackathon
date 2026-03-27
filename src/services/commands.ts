@@ -7,6 +7,7 @@ import {
   updateOrderStatus,
   updateOrderNextExecution,
   getUserExecutions,
+  resetFailureCount,
 } from '../db';
 import * as schema from '../db/schema';
 import type { User, DCAOrder } from '../db/schema';
@@ -53,7 +54,7 @@ async function handleStart(whatsappId: string, user: User): Promise<void> {
 
     await sendMessage(
       whatsappId,
-      `🚀 Bienvenido a *SatsPilot*! Tu copiloto cripto en WhatsApp.\n\nTu wallet en Rootstock fue creada:\n*${address}*\n\nEnviá rUSDT o RBTC a esta dirección para empezar a invertir con DCA.\n\nEscribí *ayuda* para ver todos los comandos.`
+      `🚀 Bienvenido a *SatsPilot*! Tu copiloto cripto en WhatsApp.\n\nTu wallet en Rootstock fue creada:\n*${address}*\n\nEnviá DOC o RBTC a esta dirección para empezar a invertir con DCA.\n\nDOC es un dólar digital respaldado por Bitcoin (1 DOC = 1 USD). Escribí *invertir* después de depositar para generar yield mientras esperás.\n\nEscribí *ayuda* para ver todos los comandos.`
     );
   } else {
     const balance = await getWalletBalance(user.walletAddress);
@@ -91,7 +92,7 @@ async function handleDca(
   if (!SUPPORTED_TOKENS.includes(normalizedToken)) {
     await sendMessage(
       whatsappId,
-      `Token "${params.token}" no soportado.\nDisponibles: RBTC, DOC, RIF, rUSDT, SOV, DLLR, USDC`
+      `Token "${params.token}" no soportado.\nDisponibles: RBTC, DOC, RIF, rUSDT, SOV, DLLR`
     );
     return;
   }
@@ -267,6 +268,7 @@ async function handleResume(
   }
 
   updateOrderStatus(order.id, ORDER_STATUS.ACTIVE);
+  resetFailureCount(order.id);
   updateOrderNextExecution(order.id, new Date().toISOString());
 
   await sendMessage(
@@ -317,7 +319,7 @@ async function handleDeposit(whatsappId: string, user: User): Promise<void> {
 
   await sendMessage(
     whatsappId,
-    `📥 *Dirección de depósito*\n\n*${user.walletAddress}*\n\nEnviá RBTC o rUSDT a esta dirección en la red Rootstock para fondear tus órdenes DCA.`
+    `📥 *Dirección de depósito*\n\n*${user.walletAddress}*\n\nEnviá DOC o RBTC a esta dirección en la red Rootstock para fondear tus órdenes DCA.\n\nDOC = dólar digital respaldado por Bitcoin (1 DOC ≈ 1 USD).`
   );
 }
 
@@ -374,7 +376,7 @@ async function handleHelp(whatsappId: string): Promise<void> {
       `"Cancelar orden #2"\n\n` +
       `DOC es la stablecoin por defecto (dólar on-chain respaldado por BTC).\n` +
       `Tus DOC libres pueden generar ~5% anual en Tropykus — escribí *invertir*.\n\n` +
-      `Tokens soportados: RBTC, DOC, RIF, rUSDT, SOV, DLLR, USDC\n` +
+      `Tokens soportados: RBTC, DOC, RIF, rUSDT, SOV, DLLR\n` +
       `Frecuencias: cada hora, diario, semanal`
   );
 }
