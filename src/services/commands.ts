@@ -11,11 +11,12 @@ import {
 } from '../db';
 import * as schema from '../db/schema';
 import type { User, DCAOrder } from '../db/schema';
-import { getUserWallet, getWalletBalance, getTokenBalance } from './wallet';
+import { getUserWallet, getWalletBalance, getTokenBalance, getProvider } from './wallet';
+import { parseEther, parseUnits, Contract } from 'ethers';
 import { sendMessage } from './whatsapp';
 import { parseMessage } from './parser';
 import type { ParsedIntent } from './parser';
-import { TOKEN_ADDRESSES } from '../config/tokens';
+import { TOKEN_ADDRESSES, TOKEN_DECIMALS, ERC20_ABI, tokenBySymbol } from '../config/tokens';
 import { ORDER_STATUS, EXEC_STATUS } from '../config/constants';
 import { getQuote } from './swap';
 import { getSupportedYieldTokens } from './yield';
@@ -356,6 +357,90 @@ async function handlePark(whatsappId: string, user: User): Promise<void> {
   }
 }
 
+async function handleWithdraw(
+  whatsappId: string,
+  user: User,
+  params: ParsedIntent['params']
+): Promise<void> {
+  if (!user.walletAddress) {
+    await sendMessage(whatsappId, 'No tenés wallet. Escribí *start* para crear una.');
+    return;
+  }
+
+  if (!params.amount || !params.token || !params.toAddress) {
+    await sendMessage(
+      whatsappId,
+      'Para retirar necesito:\n• *Monto* a retirar\n• *Token* (ej: RBTC, DOC, RIF)\n• *Dirección* destino (0x...)\n\nEjemplo: "retirar 0.5 RBTC a 0x1234...abcd"'
+    );
+    return;
+  }
+
+  const amountNum = parseFloat(params.amount);
+  if (isNaN(amountNum) || amountNum <= 0) {
+    await sendMessage(whatsappId, 'Monto inválido. Ingresá un número positivo.');
+    return;
+  }
+  if (amountNum > MAX_DCA_AMOUNT) {
+    await sendMessage(whatsappId, `Monto muy grande. Máximo por retiro: ${MAX_DCA_AMOUNT}.`);
+    return;
+  }
+
+  const normalizedToken = params.token.toUpperCase();
+  if (!SUPPORTED_TOKENS.includes(normalizedToken)) {
+    await sendMessage(
+      whatsappId,
+      `Token "${params.token}" no soportado.\nDisponibles: RBTC, DOC, RIF, rUSDT, SOV, DLLR`
+    );
+    return;
+  }
+
+  const toAddress = params.toAddress;
+  if (!/^0x[a-fA-F0-9]{40}$/.test(toAddress)) {
+    await sendMessage(whatsappId, 'Dirección inválida. Debe ser una dirección 0x de 42 caracteres.');
+    return;
+  }
+
+  const wallet = getUserWallet(user.walletIndex);
+
+  try {
+    let txHash: string;
+
+    if (normalizedToken === 'RBTC') {
+      const tx = await wallet.sendTransaction({
+        to: toAddress,
+        value: parseEther(params.amount),
+      });
+      const receipt = await tx.wait();
+      if (!receipt) throw new Error('Transaction was dropped or replaced');
+      txHash = tx.hash;
+    } else {
+      const tokenAddress = tokenBySymbol(normalizedToken);
+      if (!tokenAddress) throw new Error(`Token address not found for ${normalizedToken}`);
+      const decimals = TOKEN_DECIMALS[normalizedToken] ?? 18;
+      const tokenContract = new Contract(
+        tokenAddress,
+        [...ERC20_ABI, 'function transfer(address to, uint256 amount) returns (bool)'],
+        wallet
+      );
+      const tx = await tokenContract.transfer(toAddress, parseUnits(params.amount, decimals));
+      const receipt = await tx.wait();
+      if (!receipt) throw new Error('Transaction was dropped or replaced');
+      txHash = tx.hash;
+    }
+
+    await sendMessage(
+      whatsappId,
+      `✅ Retiro exitoso: ${params.amount} ${normalizedToken} → ${toAddress}\nTx: https://explorer.rootstock.io/tx/${txHash}`
+    );
+  } catch (err) {
+    console.error('[commands] handleWithdraw failed:', err);
+    await sendMessage(
+      whatsappId,
+      `No se pudo completar el retiro. Verificá tu saldo y la dirección destino.\nError: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+}
+
 async function handleHelp(whatsappId: string): Promise<void> {
   await sendMessage(
     whatsappId,
@@ -364,6 +449,7 @@ async function handleHelp(whatsappId: string): Promise<void> {
       `*balance* — Ver saldos de tu wallet\n` +
       `*depositar* — Obtener tu dirección de depósito\n` +
       `*invertir* — Depositar tus DOC en Tropykus (~5% anual)\n` +
+      `*retirar* — Retirar tokens a una dirección externa\n` +
       `*estado* — Ver órdenes DCA activas e historial\n` +
       `*ayuda* — Mostrar este mensaje\n\n` +
       `*Crear DCA:*\n` +
@@ -374,6 +460,9 @@ async function handleHelp(whatsappId: string): Promise<void> {
       `"Pausar orden #3"\n` +
       `"Reanudar mi DCA"\n` +
       `"Cancelar orden #2"\n\n` +
+      `*Retiros:*\n` +
+      `"Retirar 0.5 RBTC a 0x1234...abcd"\n` +
+      `"Withdraw 10 DOC to 0x1234...abcd"\n\n` +
       `DOC es la stablecoin por defecto (dólar on-chain respaldado por BTC).\n` +
       `Tus DOC libres pueden generar ~5% anual en Tropykus — escribí *invertir*.\n\n` +
       `Tokens soportados: RBTC, DOC, RIF, rUSDT, SOV, DLLR\n` +
@@ -440,6 +529,9 @@ export async function processMessage(
         break;
       case 'park':
         await handlePark(whatsappId, user);
+        break;
+      case 'withdraw':
+        await handleWithdraw(whatsappId, user, intent.params);
         break;
       case 'help':
         await handleHelp(whatsappId);

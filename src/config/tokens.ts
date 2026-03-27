@@ -18,7 +18,6 @@ export const CONTRACTS: Record<string, string> = {
 export const YIELD_CONTRACTS: Record<string, string> = {
   iRBTC: "0xa9dcdc63eabb8a2b6f39d7ff9429d88340044a7a",
   iDOC: "0xd8d25f03ebba94e15df2ed4d6d38276b595593c1",
-  iXUSD: "0x8f77ecf69711a4b346f23109c40416be3dc7f129",
   iDLLR: "0x077fcb01cab070a30bc14b44559c96f529ee017f",
 };
 

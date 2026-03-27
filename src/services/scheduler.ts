@@ -31,7 +31,9 @@ async function processDueOrders(): Promise<void> {
   isProcessing = true;
   try {
   const dueOrders = getDueOrders();
-  console.log(`[scheduler] Found ${dueOrders.length} due orders`);
+  if (dueOrders.length > 0) {
+    console.log(`[scheduler] Found ${dueOrders.length} due orders`);
+  }
 
   for (const order of dueOrders) {
     try {

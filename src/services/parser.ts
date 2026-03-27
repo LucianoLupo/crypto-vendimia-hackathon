@@ -1,13 +1,14 @@
 import { env } from '../config/env';
 
 export type ParsedIntent = {
-  action: 'start' | 'dca' | 'balance' | 'status' | 'pause' | 'resume' | 'cancel' | 'help' | 'deposit' | 'park' | 'unknown';
+  action: 'start' | 'dca' | 'balance' | 'status' | 'pause' | 'resume' | 'cancel' | 'help' | 'deposit' | 'park' | 'withdraw' | 'unknown';
   params: {
     token?: string;
     fromToken?: string;
     amount?: string;
     frequency?: string;
     orderId?: number;
+    toAddress?: string;
   };
   confidence: number;
   rawResponse?: string;
@@ -31,18 +32,20 @@ Acciones:
 - "cancel": quiere cancelar/eliminar una orden. Extraer orderId si lo menciona.
 - "deposit": quiere su dirección de wallet para depositar fondos
 - "park": quiere depositar sus DOC libres en Tropykus para generar yield (~5% anual). Palabras clave: invertir mis DOC, parquear, park
+- "withdraw": quiere retirar tokens de su wallet a una dirección externa. Extraer: amount, token, toAddress (dirección 0x). Palabras clave: retirar, withdraw, sacar
 - "help": quiere ayuda, lista de comandos, o qué puede hacer el bot
 - "unknown": el mensaje no coincide con ninguna acción
 
 Esquema JSON:
 {
-  "action": "start" | "dca" | "balance" | "status" | "pause" | "resume" | "cancel" | "help" | "deposit" | "park" | "unknown",
+  "action": "start" | "dca" | "balance" | "status" | "pause" | "resume" | "cancel" | "help" | "deposit" | "park" | "withdraw" | "unknown",
   "params": {
     "token": string | undefined,
     "fromToken": string | undefined,
     "amount": string | undefined,
     "frequency": string | undefined,
-    "orderId": number | undefined
+    "orderId": number | undefined,
+    "toAddress": string | undefined
   },
   "confidence": number
 }
@@ -54,6 +57,7 @@ Ejemplos:
 - "parquear" → {"action":"park","params":{},"confidence":0.98}
 - "ver mi balance" → {"action":"balance","params":{},"confidence":0.99}
 - "pausar orden 3" → {"action":"pause","params":{"orderId":3},"confidence":0.97}
+- "retirar 0.5 RBTC a 0x1234567890abcdef1234567890abcdef12345678" → {"action":"withdraw","params":{"amount":"0.5","token":"RBTC","toAddress":"0x1234567890abcdef1234567890abcdef12345678"},"confidence":0.98}
 - "hola" → {"action":"start","params":{},"confidence":0.85}
 - "como esta el clima?" → {"action":"unknown","params":{},"confidence":0.95}`;
 
@@ -84,6 +88,22 @@ function tryLocalParse(text: string): ParsedIntent | null {
   // Park / invertir DOC en yield (but NOT "invertir 5 DOC semanal" which is DCA)
   if (/^(parquear|park)(\s.*)?$/i.test(t) || /^invertir(\s+(mis\s+)?doc)?$/i.test(t)) {
     return { action: 'park', params: {}, confidence: 1 };
+  }
+
+  // Withdraw: "retirar 0.5 RBTC a 0x..." / "withdraw 10 DOC to 0x..."
+  const withdrawMatch = t.match(
+    /^(?:retirar|withdraw|sacar)\s+([\d.]+)\s*(\w+)\s+(?:a|to)\s+(0x[a-fA-F0-9]{40})$/i
+  );
+  if (withdrawMatch) {
+    return {
+      action: 'withdraw',
+      params: {
+        amount: withdrawMatch[1],
+        token: withdrawMatch[2].toUpperCase(),
+        toAddress: withdrawMatch[3],
+      },
+      confidence: 0.95,
+    };
   }
 
   // DCA: "comprar 10 RBTC diario" / "buy 10 RBTC daily" / "invertir 5 DOC semanal"
@@ -184,6 +204,7 @@ export async function parseMessage(messageText: string): Promise<ParsedIntent> {
         amount: parsed.params?.amount,
         frequency: parsed.params?.frequency,
         orderId: typeof parsed.params?.orderId === 'number' ? parsed.params.orderId : undefined,
+        toAddress: typeof parsed.params?.toAddress === 'string' ? parsed.params.toAddress : undefined,
       },
       confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0,
       rawResponse: raw,
