@@ -43,14 +43,25 @@ SatsPilotDCA.sol (Smart Contract en Rootstock)
     Rootstock Blockchain (EVM, asegurada por el hashrate de Bitcoin)
 ```
 
-### Modelo de seguridad: keeper, no custodio
+### Modelo de seguridad: custodial con lógica on-chain
 
-En la arquitectura anterior, el servidor tenía acceso completo a las wallets de los usuarios (modelo custodial). Con el smart contract, el modelo cambió:
+**Transparencia total sobre el modelo de custodia:**
 
-- **El contrato `SatsPilotDCA` custodia los fondos** — los usuarios depositan DOC directamente en el contrato
-- **El servidor actúa como "keeper"** — solo puede llamar a `executeDca()` para disparar compras programadas
-- **El keeper NO puede retirar fondos** — solo los usuarios pueden retirar sus DOC y RBTC acumulado
-- **Los fondos no se mueven sin autorización del usuario** — depositar, retirar y cancelar son funciones que solo el usuario puede ejecutar
+El smart contract `SatsPilotDCA` fue diseñado para ser **no custodial** — los fondos viven en el contrato, el keeper solo puede disparar compras, y solo el `msg.sender` original puede retirar sus fondos.
+
+Sin embargo, dado que la interfaz es **WhatsApp** (sin MetaMask ni wallet web3), el backend necesita firmar transacciones en nombre del usuario usando wallets HD derivadas del mnemónico maestro. Esto significa:
+
+- **El backend firma el `DOC.approve()` y `createSchedule()`** en nombre del usuario — porque el usuario no tiene cómo firmar desde WhatsApp
+- **En la práctica, el backend tiene acceso a las claves privadas** — lo que hace el modelo custodial a nivel de firma, aunque la lógica DCA corre on-chain
+- **La ventaja del contrato** es que la lógica de DCA, yield, y fees es **transparente y verificable on-chain** — no es una caja negra
+- **El keeper solo llama `executeDca()`** — pero como el backend también controla las wallets de los usuarios, teóricamente podría llamar `withdrawDoc()` o `cancelSchedule()` en su nombre
+
+**Para alcanzar un modelo verdaderamente no custodial**, se necesitaría:
+- Account Abstraction (ERC-4337) con session keys limitadas
+- O una companion web app donde el usuario firma con su propia wallet
+- O integración con wallets como Beexo que soportan firma desde móvil
+
+**Para el hackathon**, este modelo híbrido es apropiado: la lógica on-chain agrega transparencia y verificabilidad, mientras que la experiencia de usuario sigue siendo puro WhatsApp sin fricción técnica.
 
 ## Smart Contract: SatsPilotDCA
 
