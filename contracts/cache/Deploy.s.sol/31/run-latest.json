@@ -1,0 +1,7 @@
+{
+  "transactions": [
+    {
+      "rpc": "https://public-node.testnet.rsk.co"
+    }
+  ]
+}
