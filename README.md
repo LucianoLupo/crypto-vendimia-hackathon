@@ -54,7 +54,7 @@ En la arquitectura anterior, el servidor tenía acceso completo a las wallets de
 
 ## Smart Contract: SatsPilotDCA
 
-> **Estado: NO DESPLEGADO.** El contrato está escrito y listo para deploy pero aún NO está en mainnet de Rootstock. El deploy se hará una vez completada la integración con el backend.
+> **Estado: DESPLEGADO EN TESTNET.** Contrato en RSK testnet: `0xFB7C51D09Da311204d9eCA7791c3C7A47d0E2A4c`. Deploy a mainnet pendiente.
 
 ### Interfaz
 
@@ -161,22 +161,32 @@ forge test
 
 ## Contratos en Rootstock
 
-| Contrato | Dirección |
+Las direcciones se seleccionan automáticamente según la red (mainnet/testnet) configurada en `RSK_RPC_URL`.
+
+### RSK Testnet (chainId 31) — Desplegado
+
+| Contrato | Dirección (Testnet) |
 |----------|-----------|
-| SatsPilotDCA | **No desplegado aún** |
+| **SatsPilotDCA** | `0xFB7C51D09Da311204d9eCA7791c3C7A47d0E2A4c` |
+| Money on Chain (MoC) | `0x2820f6d4D199B8D8838A4B26F9917754B86a0c1F` |
+| Tropykus kDOC | `0x71e6B108d823C2786f8EF63A3E0589576B4F3914` |
+| Tropykus kRBTC | `0x5b35072cd6110606c8421e013304110fa04a32a3` |
+| DOC | `0xCB46c0ddc60D18eFEB0E586C17Af6ea36452Dae0` |
+| RIF | `0x19f64674d8a5b4e652319f5e239efd3bc969a1fe` |
+
+### RSK Mainnet (chainId 30) — Pendiente de deploy
+
+| Contrato | Dirección (Mainnet) |
+|----------|-----------|
+| SatsPilotDCA | **Pendiente de deploy** |
 | Money on Chain (MoC) | `0xf773b590af754d597770937fa8ea7abdf2668370` |
 | Tropykus kDOC | `0x544eb90e766b405134b3b3f62b6b4c23fcd5fda2` |
 | Tropykus kRBTC | `0x0aeadb9d4c6a80462a47e87e76e487fa8b9a37d7` |
-| Sovryn iDOC | `0xd8d25f03ebba94e15df2ed4d6d38276b595593c1` |
-| Sovryn iDLLR | `0x077fcb01cab070a30bc14b44559c96f529ee017f` |
-| SwapRouter02 (Uniswap V3) | `0x0b14ff67f0014046b4b99057aec4509640b3947a` |
-| QuoterV2 (Uniswap V3) | `0xb51727c996c68e60f598a923a5006853cd2feb31` |
-| V3Factory (Uniswap V3) | `0xaf37ec98a00fd63689cf3060bf3b6784e00cad82` |
+| DOC | `0xe700691da7b9851f2f35f8b8182c69c53ccad9db` |
 | WRBTC | `0x542fda317318ebf1d3deaf76e0b632741a7e677d` |
 | rUSDT | `0xef213441a85df4d7acbdae0cf78004e1e486bb96` |
-| DOC | `0xe700691da7b9851f2f35f8b8182c69c53ccad9db` |
 
-Todas las direcciones están en lowercase para evitar problemas con el checksum EIP-1191 de RSK (chainId 30).
+Todas las direcciones de mainnet están en lowercase para evitar problemas con el checksum EIP-1191 de RSK (chainId 30). El contrato usa `immutable` en lugar de `constant` para soportar ambas redes con el mismo código.
 
 ## Seguridad y Modelo de Confianza
 
