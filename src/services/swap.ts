@@ -1,4 +1,4 @@
-import { Contract, Wallet, parseUnits, formatUnits } from 'ethers';
+import { Contract, Wallet, parseUnits, formatUnits, formatEther } from 'ethers';
 import {
   TOKEN_ADDRESSES,
   CONTRACTS,
@@ -6,9 +6,12 @@ import {
   DEFAULT_FEE_TIER,
   DEFAULT_SLIPPAGE,
   ERC20_ABI,
+  MOC_ADDRESS,
   tokenBySymbol,
 } from '../config/tokens';
 import { getProvider } from './wallet';
+
+const MOC_ABI = ['function redeemFreeDoc(uint256 docAmount) external'];
 
 const ROUTER_ABI = [
   // SwapRouter02 on RSK: deadline is NOT in the struct, use multicall wrapper
@@ -95,12 +98,46 @@ export async function ensureApproval(
   }
 }
 
+async function executeSwapViaMoC(
+  wallet: Wallet,
+  amountIn: string
+): Promise<{ txHash: string; amountOut: string }> {
+  const provider = getProvider();
+  const docDecimals = TOKEN_DECIMALS.DOC ?? 18;
+  const parsedAmount = parseUnits(amountIn, docDecimals);
+
+  // MoC redeemFreeDoc: burns DOC, sends native RBTC back
+  // No DOC.approve needed — MoC burns DOC directly as token owner
+  const moc = new Contract(MOC_ADDRESS, MOC_ABI, wallet);
+
+  const preBalance = await provider.getBalance(wallet.address);
+  console.log(`[swap] MoC redeemFreeDoc: ${amountIn} DOC...`);
+
+  const tx = await moc.redeemFreeDoc(parsedAmount, { gasLimit: 800000 });
+  const receipt = await tx.wait();
+  if (!receipt) throw new Error('MoC redemption tx dropped');
+
+  const postBalance = await provider.getBalance(wallet.address);
+  // Account for gas cost: postBalance = preBalance - gasCost + rbtcReceived
+  const gasCost = receipt.gasUsed * BigInt(receipt.gasPrice ?? 0);
+  const rbtcReceived = postBalance - preBalance + gasCost;
+  const amountOut = formatEther(rbtcReceived > 0n ? rbtcReceived : 0n);
+
+  console.log(`[swap] MoC redemption OK: ${amountIn} DOC → ${amountOut} RBTC`);
+  return { txHash: tx.hash, amountOut };
+}
+
 export async function executeSwap(
   wallet: Wallet,
   tokenInSymbol: string,
   tokenOutSymbol: string,
   amountIn: string
 ): Promise<{ txHash: string; amountOut: string }> {
+  // Use MoC for DOC → RBTC (zero slippage, oracle price)
+  if (tokenInSymbol.toUpperCase() === 'DOC' && tokenOutSymbol.toUpperCase() === 'RBTC') {
+    return executeSwapViaMoC(wallet, amountIn);
+  }
+
   try {
     const isNativeRBTC = tokenInSymbol.toUpperCase() === 'RBTC';
     const tokenIn = resolveTokenAddress(tokenInSymbol);

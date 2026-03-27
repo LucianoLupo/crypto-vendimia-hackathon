@@ -18,6 +18,10 @@ export const TOKEN_ADDRESSES: Record<string, string> = isTestnet ? {
   DLLR: "0xc1411567d2670e24d9c4daaa7cda95686e1250aa",
 };
 
+export const MOC_ADDRESS = isTestnet
+  ? "0x2820f6d4d199b8d8838a4b26f9917754b86a0c1f"
+  : "0xf773b590af754d597770937fa8ea7abdf2668370";
+
 export const CONTRACTS: Record<string, string> = isTestnet ? {
   // No Uniswap V3 on testnet
 } : {
