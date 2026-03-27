@@ -250,11 +250,19 @@ async function handleStatus(whatsappId: string, user: User): Promise<void> {
     for (const exec of executions) {
       const icon =
         exec.status === EXEC_STATUS.COMPLETED ? '✅' : exec.status === EXEC_STATUS.FAILED ? '❌' : '⏳';
-      msg += `${icon} ${formatDate(exec.executedAt)} — ${exec.amountIn} entrada`;
-      if (exec.amountOut) msg += ` → ${exec.amountOut} salida`;
-      msg += '\n';
+      msg += `\n${icon} ${formatDate(exec.executedAt)}`;
+      msg += `\n   ${exec.amountIn} → ${exec.amountOut ?? '?'}`;
+      if (exec.swapTxHash) {
+        msg += `\n   🔗 ${EXPLORER_URL}/tx/${exec.swapTxHash}`;
+      }
+      if (exec.error) {
+        msg += `\n   ⚠️ ${exec.error}`;
+      }
     }
   }
+
+  // Add wallet explorer link
+  msg += `\n\n🔗 Ver wallet: ${EXPLORER_URL}/address/${user.walletAddress}`;
 
   await sendMessage(whatsappId, msg.trim());
 }
