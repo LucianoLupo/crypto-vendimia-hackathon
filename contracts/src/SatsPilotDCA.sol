@@ -257,18 +257,19 @@ contract SatsPilotDCA {
         feeAccumulated += fee;
 
         // 3. Convert DOC → RBTC via Money on Chain (zero slippage, oracle price)
-        // Approve MoC to spend DOC if needed (some MoC versions require it)
-        uint256 mocAllowance = DOC.allowance(address(this), address(MOC));
-        if (mocAllowance < redeemAmount) {
-            DOC.approve(address(MOC), type(uint256).max);
-        }
-        uint256 preBalance = address(this).balance;
+        // No DOC.approve needed — MoC burns DOC directly as token owner
+        // MoC may partially redeem if freeDoc < redeemAmount, so measure actual DOC burned
+        uint256 docBefore = DOC.balanceOf(address(this));
+        uint256 rbtcBefore = address(this).balance;
         MOC.redeemFreeDoc(redeemAmount);
-        uint256 rbtcReceived = address(this).balance - preBalance;
+        uint256 docAfter = DOC.balanceOf(address(this));
+        uint256 rbtcReceived = address(this).balance - rbtcBefore;
+        uint256 docActuallyBurned = docBefore - docAfter;
         require(rbtcReceived > 0, "MoC redemption returned 0");
 
-        // 4. Update schedule
-        s.docBalance -= purchaseAmount;
+        // 4. Update schedule — only deduct what was actually burned + fee
+        uint256 totalDeducted = docActuallyBurned + fee;
+        s.docBalance -= totalDeducted;
         s.accumulatedRbtc += rbtcReceived;
         s.lastExecution = block.timestamp;
 
