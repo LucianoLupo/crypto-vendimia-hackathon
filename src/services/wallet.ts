@@ -14,7 +14,10 @@ let _provider: JsonRpcProvider | null = null;
 
 export function getProvider(): JsonRpcProvider {
   if (!_provider) {
-    _provider = new JsonRpcProvider(env.RSK_RPC_URL, { chainId: 30, name: 'rsk' }, { staticNetwork: true });
+    const isTestnet = env.RSK_RPC_URL.includes('testnet');
+    const chainId = isTestnet ? 31 : 30;
+    const networkName = isTestnet ? 'rsk-testnet' : 'rsk';
+    _provider = new JsonRpcProvider(env.RSK_RPC_URL, { chainId, name: networkName }, { staticNetwork: true });
   }
   return _provider;
 }
