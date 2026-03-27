@@ -174,7 +174,8 @@ async function handleBalance(whatsappId: string, user: User): Promise<void> {
   await sendMessage(
     whatsappId,
     `💰 *Balance de tu Wallet*\n\n` +
-      `Dirección: ${user.walletAddress}\n\n` +
+      `Dirección: ${user.walletAddress}\n` +
+      `🔗 ${EXPLORER_URL}/address/${user.walletAddress}\n\n` +
       `RBTC: ${parseFloat(rbtcBalance).toFixed(8)}\n` +
       `rUSDT: ${parseFloat(rusdtBalance).toFixed(2)}\n` +
       `${docLine}\n` +
