@@ -18,6 +18,7 @@ import { parseMessage } from './parser';
 import type { ParsedIntent } from './parser';
 import { TOKEN_ADDRESSES, TOKEN_DECIMALS, ERC20_ABI, tokenBySymbol } from '../config/tokens';
 import { ORDER_STATUS, EXEC_STATUS } from '../config/constants';
+import { EXPLORER_URL } from '../config/env';
 import { getQuote } from './swap';
 import { getSupportedYieldTokens } from './yield';
 import { parkIdleFunds, getIdleYieldBalance } from './idle-yield';
@@ -346,7 +347,7 @@ async function handlePark(whatsappId: string, user: User): Promise<void> {
     const result = await parkIdleFunds(wallet, docBalance);
     await sendMessage(
       whatsappId,
-      `Tus ${freeDoc.toFixed(2)} DOC fueron depositados en Tropykus kDOC para generar ~5% anual.\nTx: https://explorer.rootstock.io/tx/${result.txHash}\n\nEscribí *balance* para ver tu saldo actualizado.`
+      `Tus ${freeDoc.toFixed(2)} DOC fueron depositados en Tropykus kDOC para generar ~5% anual.\nTx: ${EXPLORER_URL}/tx/${result.txHash}\n\nEscribí *balance* para ver tu saldo actualizado.`
     );
   } catch (err) {
     console.error('[commands] handlePark failed:', err);
@@ -430,7 +431,7 @@ async function handleWithdraw(
 
     await sendMessage(
       whatsappId,
-      `✅ Retiro exitoso: ${params.amount} ${normalizedToken} → ${toAddress}\nTx: https://explorer.rootstock.io/tx/${txHash}`
+      `✅ Retiro exitoso: ${params.amount} ${normalizedToken} → ${toAddress}\nTx: ${EXPLORER_URL}/tx/${txHash}`
     );
   } catch (err) {
     console.error('[commands] handleWithdraw failed:', err);

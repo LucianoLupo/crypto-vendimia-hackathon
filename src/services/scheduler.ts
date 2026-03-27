@@ -11,6 +11,7 @@ import { sendMessage } from './whatsapp';
 import { calculateSmartAmount } from './smart-dca';
 import { EXEC_STATUS, ORDER_STATUS } from '../config/constants';
 import { TOKEN_ADDRESSES } from '../config/tokens';
+import { EXPLORER_URL } from '../config/env';
 import { calcNextExecution } from '../utils/time';
 import { parseUnits } from 'ethers';
 
@@ -169,14 +170,14 @@ async function processDueOrders(): Promise<void> {
       if (executionStatus === EXEC_STATUS.COMPLETED && swapTxHash) {
         message =
           `DCA ejecutado: ${effectiveAmount} ${order.fromToken} → ${amountOut} ${order.toToken}\n` +
-          `Tx: https://explorer.rootstock.io/tx/${swapTxHash}`;
+          `Tx: ${EXPLORER_URL}/tx/${swapTxHash}`;
         if (smartDcaReason && smartDcaReason !== 'Precio dentro del rango normal' && smartDcaReason !== 'Datos de precio no disponibles, usando monto base') {
           message += `\n\nSmart DCA: ${smartDcaReason}`;
         }
         if (yieldTxHash) {
           message +=
             `\n\nDepósito en yield: ${yieldTokensReceived} i${order.toToken} recibidos\n` +
-            `Tx: https://explorer.rootstock.io/tx/${yieldTxHash}`;
+            `Tx: ${EXPLORER_URL}/tx/${yieldTxHash}`;
         } else if (errorMsg) {
           message += `\n\nNota: ${errorMsg}`;
         }

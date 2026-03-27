@@ -22,3 +22,8 @@ if (!result.success) {
 }
 
 export const env = result.data;
+
+// Derive explorer URL from RPC (testnet vs mainnet)
+export const EXPLORER_URL = env.RSK_RPC_URL.includes('testnet')
+  ? 'https://explorer.testnet.rootstock.io'
+  : 'https://explorer.rootstock.io';
