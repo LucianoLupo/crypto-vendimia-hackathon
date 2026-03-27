@@ -15,11 +15,25 @@ const IRBTC_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
 ];
 
-const YIELD_MAP: Record<string, { iToken: string; underlying: string; isNative: boolean }> = {
-  RBTC: { iToken: YIELD_CONTRACTS.iRBTC, underlying: 'native', isNative: true },
-  DOC: { iToken: YIELD_CONTRACTS.iDOC, underlying: TOKEN_ADDRESSES.DOC, isNative: false },
-  DLLR: { iToken: YIELD_CONTRACTS.iDLLR, underlying: TOKEN_ADDRESSES.DLLR, isNative: false },
-};
+// Build yield map from available contracts (testnet vs mainnet have different sets)
+const YIELD_MAP: Record<string, { iToken: string; underlying: string; isNative: boolean }> = {};
+
+if (YIELD_CONTRACTS.iRBTC) {
+  YIELD_MAP.RBTC = { iToken: YIELD_CONTRACTS.iRBTC, underlying: 'native', isNative: true };
+} else if (YIELD_CONTRACTS.kRBTC) {
+  // Tropykus testnet — kRBTC uses mint() payable (same as Sovryn mintWithBTC pattern)
+  YIELD_MAP.RBTC = { iToken: YIELD_CONTRACTS.kRBTC, underlying: 'native', isNative: true };
+}
+
+if (YIELD_CONTRACTS.iDOC && TOKEN_ADDRESSES.DOC) {
+  YIELD_MAP.DOC = { iToken: YIELD_CONTRACTS.iDOC, underlying: TOKEN_ADDRESSES.DOC, isNative: false };
+} else if (YIELD_CONTRACTS.kDOC && TOKEN_ADDRESSES.DOC) {
+  YIELD_MAP.DOC = { iToken: YIELD_CONTRACTS.kDOC, underlying: TOKEN_ADDRESSES.DOC, isNative: false };
+}
+
+if (YIELD_CONTRACTS.iDLLR && TOKEN_ADDRESSES.DLLR) {
+  YIELD_MAP.DLLR = { iToken: YIELD_CONTRACTS.iDLLR, underlying: TOKEN_ADDRESSES.DLLR, isNative: false };
+}
 
 export async function depositToYield(
   wallet: Wallet,
@@ -37,10 +51,16 @@ export async function depositToYield(
   try {
     let tx;
     if (config.isNative) {
-      // Sovryn iRBTC: use mintWithBTC(receiver, useLM=false) with msg.value
-      const iRBTC = new Contract(config.iToken, IRBTC_ABI, wallet);
+      // Try Tropykus kRBTC first (mint() payable), fall back to Sovryn mintWithBTC
+      const iRBTC = new Contract(config.iToken, [...IRBTC_ABI, 'function mint() external payable returns (uint256)'], wallet);
       const preBalance: bigint = await iRBTC.balanceOf(wallet.address);
-      tx = await iRBTC.mintWithBTC(wallet.address, false, { value: parsedAmount });
+      try {
+        // Tropykus kRBTC: mint() payable — no args
+        tx = await iRBTC.mint({ value: parsedAmount, gasLimit: 500000 });
+      } catch {
+        // Sovryn iRBTC: mintWithBTC(receiver, useLM=false)
+        tx = await iRBTC.mintWithBTC(wallet.address, false, { value: parsedAmount, gasLimit: 500000 });
+      }
       const receipt = await tx.wait();
       if (!receipt) throw new Error('Yield deposit transaction dropped');
       const postBalance: bigint = await iRBTC.balanceOf(wallet.address);
